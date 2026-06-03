@@ -2,7 +2,7 @@ import os, sys, time, urllib.request, json
 from seleniumbase import SB
 
 # ==========================================
-# 💡 核心配置 (G4F.GG 终极物理雷达制导版)
+# 💡 核心配置 (G4F.GG 终极雷达制导防弹版)
 # ==========================================
 TARGET_URL = "https://g4f.gg/renqi" 
 MC_USERNAME = "renqi"
@@ -20,7 +20,7 @@ def send_tg(msg):
         except:
             pass
 
-print(f"\n===== 🚀 开始执行极速续期 (终极雷达制导狙击版) =====")
+print(f"\n===== 🚀 开始执行极速续期 (终极雷达制导狙击版 v2) =====")
 
 proxy_str = "socks5://127.0.0.1:40000"
 
@@ -45,19 +45,22 @@ with SB(uc=True, proxy=proxy_str, headless=False, window_size="1920,1080") as sb
             print("ℹ️ 未找到输入框或无需填入，继续下一步。")
 
         print("🚀 触发 [+ ADD 90 MIN] 核心按钮...")
+        # 🌟 修复 1：同样套上 IIFE 外壳，杜绝一切隐患
         js_click_code = """
-        let clicked = false;
-        let els = document.querySelectorAll('button, a, input, div, span');
-        for (let i = els.length - 1; i >= 0; i--) {
-            let el = els[i];
-            let text = (el.innerText || el.value || '').toUpperCase();
-            if (text.includes('ADD 90')) {
-                el.click();
-                clicked = true;
-                break;
+        return (function() {
+            let clicked = false;
+            let els = document.querySelectorAll('button, a, input, div, span');
+            for (let i = els.length - 1; i >= 0; i--) {
+                let el = els[i];
+                let text = (el.innerText || el.value || '').toUpperCase();
+                if (text.includes('ADD 90')) {
+                    el.click();
+                    clicked = true;
+                    break;
+                }
             }
-        }
-        return clicked;
+            return clicked;
+        })();
         """
         is_clicked = sb.execute_script(js_click_code)
         if not is_clicked:
@@ -68,23 +71,24 @@ with SB(uc=True, proxy=proxy_str, headless=False, window_size="1920,1080") as sb
         
         print("🛡️ 启动【动态雷达追踪】模块，锁定靶心！")
         
-        # 🌟 核心杀手锏：注入 JS 探针，计算 CF 盾在屏幕上的绝对物理像素坐标！
-        # 这个操作只读取整数坐标，不会触发 CF 的“框架入侵”警报。
+        # 🌟 修复 2：使用标准 IIFE 函数包裹，彻底解决 V8 引擎的语法报错！
         js_radar = """
-        let cf = document.querySelector('iframe[src*="cloudflare"], iframe[src*="turnstile"], iframe[title*="Cloudflare"]');
-        if (!cf) return null;
-        let rect = cf.getBoundingClientRect();
-        
-        // 计算浏览器顶部 UI (地址栏、标签页) 的高度
-        let ui_y = window.outerHeight - window.innerHeight;
-        // 如果获取失败，使用 Chrome 标准头部高度作为保底
-        if (ui_y <= 0 || ui_y > 150) ui_y = 85; 
-        
-        // 计算物理坐标：复选框大概位于 iframe 左侧往右 30 像素处，垂直居中。
-        let target_x = window.screenX + rect.left + 30;
-        let target_y = window.screenY + ui_y + rect.top + (rect.height / 2);
-        
-        return Math.round(target_x) + "," + Math.round(target_y);
+        return (function() {
+            let cf = document.querySelector('iframe[src*="cloudflare"], iframe[src*="turnstile"], iframe[title*="Cloudflare"]');
+            // 没有盾直接返回空，这里在函数内 return 绝对合法
+            if (!cf) return ""; 
+            
+            let rect = cf.getBoundingClientRect();
+            
+            // 虚拟浏览器标准顶部导航栏高度约为 85px
+            let ui_y = 85; 
+            
+            // 计算靶心：向右偏 30px (复选框位置)，加上高度的一半
+            let target_x = rect.left + 30;
+            let target_y = rect.top + ui_y + (rect.height / 2);
+            
+            return Math.round(target_x) + "," + Math.round(target_y);
+        })();
         """
         
         coords = sb.execute_script(js_radar)
