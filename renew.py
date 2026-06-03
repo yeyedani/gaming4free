@@ -1,6 +1,5 @@
 import os, sys, time, urllib.request, json
 from seleniumbase import SB
-# 🌟 引入原生 Selenium 的鼠标物理动作链引擎
 from selenium.webdriver.common.action_chains import ActionChains
 
 # ==========================================
@@ -68,45 +67,25 @@ with SB(uc=True, proxy=proxy_str, headless=False) as sb:
             print("⚠️ JS 未能点击，尝试备用 XPath 方案...")
             sb.click('xpath=//*[contains(translate(., "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"), "add 90")]')
 
-        print("⏳ 盲等 6 秒钟，让 CF 盾在静默中完全加载...")
+        print("⏳ 盲等 6 秒钟，让 CF 盾在静默中完全加载 (严禁探测)...")
         time.sleep(6) 
         
         try:
-            print("🛡️ 彻底抛弃 SeleniumBase 保护机制，调用底层 WebDriver 原生强突！")
+            print("🛡️ 启动【隔山打牛】物理盲狙模式，绝不进入危险框架！")
             
-            # 🌟 核心杀手锏：使用原生 WebDriver 遍历全量 iframe，无视任何 CSS 可见性限制！
-            iframes = sb.driver.find_elements("tag name", "iframe")
-            cf_found = False
-            for iframe in iframes:
-                src = iframe.get_attribute("src") or ""
-                title = iframe.get_attribute("title") or ""
-                
-                if "cloudflare" in src.lower() or "turnstile" in src.lower() or "cloudflare" in title.lower():
-                    print("🎯 锁定 CF 盾真实底座，执行绝对强行切入...")
-                    # 直接传元素切入，不经过任何可视判断！
-                    sb.driver.switch_to.frame(iframe)
-                    time.sleep(1.5)
-                    
-                    # 🌟 调取原生 ActionChains，执行最高权限的硬件级鼠标中心盲击！
-                    body = sb.driver.find_element("tag name", "body")
-                    ActionChains(sb.driver).move_to_element(body).click().perform()
-                    
-                    print("🖱️ 已对盾内部下达致命的物理射击！等待验证转圈...")
-                    cf_found = True
-                    time.sleep(6)
-                    break
-                    
-            if not cf_found:
-                print("⏩ 未在源码中发现 CF 盾，可能已自动免验证放行。")
-
+            # 🌟 核心杀手锏：在主页面上，直接找到 CF 盾的外壳 (iframe 元素本身)
+            iframe_xpath = '//iframe[contains(@src, "cloudflare") or contains(@src, "turnstile") or contains(@title, "Cloudflare")]'
+            cf_iframe = sb.driver.find_element("xpath", iframe_xpath)
+            
+            # 🌟 调取原生鼠标动作链，瞄准 iframe 外壳的正中心，直接扣动扳机！
+            # 因为我们没有 switch_to_frame，CF 根本察觉不到有机器人在试图控制它！
+            ActionChains(sb.driver).move_to_element(cf_iframe).click().perform()
+            
+            print("🖱️ 已从外部成功狙击 CF 盾！等待验证转圈...")
+            time.sleep(6)
+            
         except Exception as e:
-            print(f"⏩ 底层盲击模块发生异常 (可忽略): {e}")
-        finally:
-            try:
-                # 无论发生什么，利用原生 API 撤回主页面
-                sb.driver.switch_to.default_content()
-            except:
-                pass
+            print(f"⏩ 狙击模块跳过 (未找到盾或已被自动放行): {e}")
 
         print("⏳ 等待最终续期结果加载 (等待 6 秒)...")
         time.sleep(6)
@@ -117,7 +96,7 @@ with SB(uc=True, proxy=proxy_str, headless=False) as sb:
             print("⚠️ 截图保存失败。")
 
         print("✅ 流程执行完毕！")
-        send_tg(f"✅ 服务器 [{MC_USERNAME}] 续期脚本运行完毕！\n官方界面已重构，请查阅 GitHub 最新截图确认 CF 盾是否通过以及时间是否增加。")
+        send_tg(f"✅ 服务器 [{MC_USERNAME}] 续期脚本运行完毕！\n请查阅 GitHub 最新截图确认 CF 盾是否通过以及时间是否增加。")
 
     except Exception as e:
         print(f"❌ 发生致命错误: {e}")
