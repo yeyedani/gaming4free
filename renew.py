@@ -1,6 +1,8 @@
-import os, sys, time, urllib.request, json
+import os, sys, time, urllib.request, json, re
 from seleniumbase import SB
 
+# ==========================================
+# 💡 G4F.GG 自动续期脚本 (生产环境稳定版)
 # ==========================================
 TARGET_URL = "https://g4f.gg/renqi" 
 MC_USERNAME = "renqi"
@@ -30,7 +32,6 @@ with SB(uc=True, proxy=proxy_str, headless=False, window_size="1920,1080") as sb
         os.system("sudo apt-get install -y xdotool > /dev/null 2>&1")
 
         print(f"访问目标网址: {TARGET_URL}")
-        # 固定窗口坐标，确保点击精度
         sb.driver.set_window_position(0, 0)
         sb.open(TARGET_URL)
         sb.sleep(6) 
@@ -39,6 +40,7 @@ with SB(uc=True, proxy=proxy_str, headless=False, window_size="1920,1080") as sb
         sb.save_screenshot("screenshots/1_page_loaded.png")
 
         print("尝试点击续期按钮...")
+        # 去除 return 的纯动作 JS
         js_click_code = """
         let els = document.querySelectorAll('button, a, input, div, span');
         for (let i = els.length - 1; i >= 0; i--) {
@@ -52,7 +54,6 @@ with SB(uc=True, proxy=proxy_str, headless=False, window_size="1920,1080") as sb
         """
         sb.execute_script(js_click_code)
         
-        # 备用点击
         try:
             sb.click('xpath=//*[contains(translate(., "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"), "add 90")]', timeout=2)
         except:
@@ -62,7 +63,6 @@ with SB(uc=True, proxy=proxy_str, headless=False, window_size="1920,1080") as sb
         time.sleep(6) 
         
         print("执行验证框区域点击 (4x4 网格)...")
-        # 经验证 100% 有效的安全物理坐标网格
         xs = [790, 810, 830, 850]
         ys = [540, 560, 580, 600]
         
@@ -75,14 +75,15 @@ with SB(uc=True, proxy=proxy_str, headless=False, window_size="1920,1080") as sb
         time.sleep(8)
         
         print("获取页面剩余时间...")
-        # 🌟 利用正则表达式，精准抓取网页中的 00:00:00 时间串
-        js_get_time = "let m = document.body.innerText.match(/\\d{2}:\\d{2}:\\d{2}/); return m ? m[0] : '未知';"
-        remaining_time = sb.execute_script(js_get_time)
+        # 🌟 核心修复：将网页全文拉取到 Python 中，使用 Python 提取时间，彻底避开 JS 语法限制
+        page_text = sb.get_text("body")
+        
+        time_match = re.search(r'\d{2}:\d{2}:\d{2}', page_text)
+        remaining_time = time_match.group(0) if time_match else "未知"
         print(f"提取到时间: {remaining_time}")
             
-        # 🌟 验证最终结果
-        page_text = sb.get_text("body").lower()
-        if "90 minutes added" in page_text or "extended this server recently" in page_text:
+        page_text_lower = page_text.lower()
+        if "90 minutes added" in page_text_lower or "extended this server recently" in page_text_lower:
             status = "✅ 续期成功"
         else:
             status = "⚠️ 状态未知"
