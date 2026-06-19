@@ -1,101 +1,106 @@
-import os, time, subprocess, requests
-from DrissionPage import ChromiumPage, ChromiumOptions
+import os, sys, time, urllib.request, json, re
+from seleniumbase import SB
 
-URL = "https://g4f.gg/nidaye"
-TARGET_HOURS = 48
-COOLDOWN_MINUTES = 31
-MAX_LOOPS = 50
+# ==========================================
+# 💡 G4F.GG 自动续期脚本 (生产环境稳定版)
+# ==========================================
+TARGET_URL = "https://g4f.gg/renqi" 
+MC_USERNAME = "renqi"
 
-TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
+TG_TOKEN = os.getenv("TG_TOKEN", "")
+TG_CHAT = os.getenv("TG_CHAT_ID", "")
 
-def send_tg_message(message):
-    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID: return
-    try: requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage", json={"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "HTML"}, timeout=10)
-    except: pass
-
-def rotate_warp_ip(old_ip):
-    for _ in range(3):
-        subprocess.run(['warp-cli', '--accept-tos', 'disconnect'], stdout=subprocess.DEVNULL)
-        time.sleep(2)
-        subprocess.run(['warp-cli', '--accept-tos', 'connect'], stdout=subprocess.DEVNULL)
-        time.sleep(8) 
-        try: new_ip = requests.get('https://api.ipify.org', timeout=5).text
-        except: new_ip = "获取失败"
-        if new_ip != "获取失败" and new_ip != old_ip: return new_ip
-    return "获取失败"
-
-def get_current_hours(time_text):
-    try: return int(time_text.split(':')[0]) if time_text else -1
-    except: return -1
-
-def solve_turnstile(page):
-    try:
-        iframe = page.get_frame('css:iframe[src^="https://challenges.cloudflare.com"]', timeout=5)
-        if not iframe: return False
-        time.sleep(2)
-        try: iframe.ele('tag:body').shadow_root.ele('css:input[type="checkbox"]').click.at(offset_x=10, offset_y=10)
-        except: iframe.frame_ele.click.at(offset_x=30, offset_y=30)
-        for _ in range(15):
-            time.sleep(1)
-            resp = page.ele('css:[name="cf-turnstile-response"]', timeout=1)
-            if resp and len(resp.value) > 10: return True
-        return False
-    except: return False
-
-def main():
-    co = ChromiumOptions().auto_port()
-    co.set_browser_path('/usr/bin/google-chrome')
-    co.set_argument('--no-sandbox')
-    co.set_argument('--disable-gpu')
-    co.set_argument('--disable-dev-shm-usage')
-    co.set_argument('--disable-crash-reporter') 
-    
-    page = ChromiumPage(co)
-    page.set.timeouts(page_load=15)
-    
-    loop_count, success_count = 0, 0
-    current_ip = rotate_warp_ip("0.0.0.0")
-    script_start_time = time.time() 
-    
-    while loop_count < MAX_LOOPS:
-        if time.time() - script_start_time > 5.5 * 3600: break
-        loop_count += 1
-        try: page.get(URL)
-        except: pass 
-            
-        countdown_ele = page.ele('#countdown', timeout=10)
-        if not countdown_ele:
-            current_ip = rotate_warp_ip(current_ip)
-            continue
-            
-        current_time_text = countdown_ele.text
-        if get_current_hours(current_time_text) >= TARGET_HOURS: break
-            
-        btn = page.ele('.vote-btn')
-        if not btn or not btn.states.is_enabled:
-            time.sleep(COOLDOWN_MINUTES * 60)
-            current_ip = rotate_warp_ip(current_ip)
-            continue
-            
+def send_tg(status, time_str):
+    if TG_TOKEN and TG_CHAT:
         try:
-            btn.click(by_js=True)
-            solve_turnstile(page)
-            time.sleep(5)
-            try: page.get(URL)
-            except: pass
-            new_time_text = page.ele('#countdown', timeout=10).text if page.ele('#countdown') else ""
-            if current_time_text != new_time_text and new_time_text:
-                success_count += 1
-                if get_current_hours(new_time_text) >= TARGET_HOURS: break
-                time.sleep(COOLDOWN_MINUTES * 60)
-            current_ip = rotate_warp_ip(current_ip) 
-        except: current_ip = rotate_warp_ip(current_ip)
+            msg = f"🤖 节点 [{MC_USERNAME}]\n状态: {status}\n剩余时间: {time_str}"
+            url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
+            data = json.dumps({"chat_id": TG_CHAT, "text": msg}).encode('utf-8')
+            req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'})
+            urllib.request.urlopen(req, timeout=10)
+        except:
+            pass
 
-    try: final_time, expiry_info = page.ele('#countdown').text, page.ele('.countdown-sub').text
-    except: final_time, expiry_info = "未知", "未知"
-    page.quit()
-    
-    send_tg_message(f"🎮 <b>G4F-US 续期战报</b>\n---\n🔄 循环消耗: {loop_count} 次\n✅ 成功暴击: {success_count} 次\n⏳ 存活时长: <code>{final_time}</code>\n📅 预计拔管: {expiry_info}")
+print("\n===== 开始执行 G4F 自动续期 =====")
 
-if __name__ == '__main__': main()
+proxy_str = "socks5://127.0.0.1:40000"
+
+with SB(uc=True, proxy=proxy_str, headless=False, window_size="1920,1080") as sb:
+    try:
+        print("初始化物理鼠标依赖...")
+        os.system("sudo apt-get update > /dev/null 2>&1")
+        os.system("sudo apt-get install -y xdotool > /dev/null 2>&1")
+
+        print(f"访问目标网址: {TARGET_URL}")
+        sb.driver.set_window_position(0, 0)
+        sb.open(TARGET_URL)
+        sb.sleep(6) 
+        
+        os.makedirs("screenshots", exist_ok=True)
+        sb.save_screenshot("screenshots/1_page_loaded.png")
+
+        print("尝试点击续期按钮...")
+        # 去除 return 的纯动作 JS
+        js_click_code = """
+        let els = document.querySelectorAll('button, a, input, div, span');
+        for (let i = els.length - 1; i >= 0; i--) {
+            let el = els[i];
+            let text = (el.innerText || el.value || '').toUpperCase();
+            if (text.includes('ADD 90')) {
+                el.click();
+                break;
+            }
+        }
+        """
+        sb.execute_script(js_click_code)
+        
+        try:
+            sb.click('xpath=//*[contains(translate(., "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"), "add 90")]', timeout=2)
+        except:
+            pass
+
+        print("等待人机验证加载...")
+        time.sleep(6) 
+        
+        print("执行验证框区域点击 (4x4 网格)...")
+        xs = [790, 810, 830, 850]
+        ys = [540, 560, 580, 600]
+        
+        for y in ys:
+            for x in xs:
+                os.system(f"xdotool mousemove {x} {y} click 1")
+                time.sleep(0.1)
+        
+        print("点击完成，等待验证结果...")
+        time.sleep(8)
+        
+        print("获取页面剩余时间...")
+        # 🌟 核心修复：将网页全文拉取到 Python 中，使用 Python 提取时间，彻底避开 JS 语法限制
+        page_text = sb.get_text("body")
+        
+        time_match = re.search(r'\d{2}:\d{2}:\d{2}', page_text)
+        remaining_time = time_match.group(0) if time_match else "未知"
+        print(f"提取到时间: {remaining_time}")
+            
+        page_text_lower = page_text.lower()
+        if "90 minutes added" in page_text_lower or "extended this server recently" in page_text_lower:
+            status = "✅ 续期成功"
+        else:
+            status = "⚠️ 状态未知"
+
+        try:
+            sb.save_screenshot("screenshots/2_result.png")
+        except:
+            pass
+
+        print(f"流程执行完毕。状态: {status}")
+        send_tg(status, remaining_time)
+
+    except Exception as e:
+        print(f"发生异常: {e}")
+        try:
+            os.makedirs("screenshots", exist_ok=True)
+            sb.save_screenshot("screenshots/error.png")
+        except:
+            pass
+        send_tg("❌ 发生异常失败", "未知")
