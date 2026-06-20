@@ -4,7 +4,7 @@ on:
   push:                # 新增这行，以后只要您修改代码，它就会立刻自动跑一次
   workflow_dispatch:
   schedule:
-    - cron: "31 * * * *"   # 稍微改一下数字，比如改成 45
+    - cron: "35 * * * *"   # 稍微改一下数字，比如改成 45
 
 jobs:
   run:
