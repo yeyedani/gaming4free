@@ -1,180 +1,138 @@
-import os, time, json, urllib.request, traceback
+import os, sys, time, urllib.request, json, re
 from seleniumbase import SB
 
+# ==========================================
+# 💡 G4F.GG 自动续期
+# ==========================================
 TARGETS = [
-    {"name": "nidaye", "url": "https://gaming4free.net/servers/nidaye"}
+    {"name": "nidaye", "url": "https://g4f.gg/nidaye"}
 ]
-
-PROXY = "socks5://127.0.0.1:40000"
 
 TG_TOKEN = os.getenv("TG_TOKEN", "")
 TG_CHAT = os.getenv("TG_CHAT_ID", "")
 
+def send_unified_tg(results):
+    if TG_TOKEN and TG_CHAT:
+        try:
+            lines = ["🤖 G4F 续期综合汇报"]
+            for res in results:
+                lines.append("-----------------------")
+                lines.append(f"节点: {res['name']}")
+                lines.append(f"状态: {res['status']}")
+                lines.append(f"剩余时间: {res['time']}")
+            
+            msg = "\n".join(lines)
+            url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
+            data = json.dumps({"chat_id": TG_CHAT, "text": msg}).encode('utf-8')
+            req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'})
+            urllib.request.urlopen(req, timeout=10)
+            print("Telegram 综合通知发送成功。")
+        except Exception as e:
+            print(f"发送通知失败: {e}")
 
-# --------------------------
-# Telegram
-# --------------------------
-def tg(msg):
-    if not (TG_TOKEN and TG_CHAT):
-        return
-    try:
-        url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
-        data = json.dumps({"chat_id": TG_CHAT, "text": msg}).encode()
-        urllib.request.urlopen(
-            urllib.request.Request(url, data, {'Content-Type': 'application/json'}),
-            timeout=10
-        )
-    except:
-        pass
+print("\n===== 开始执行 =====")
 
+proxy_str = "socks5://127.0.0.1:40000"
+task_results = []
 
-# --------------------------
-# 核心：抓 API vote（稳定判定）
-# --------------------------
-def extract_api_vote(sb):
-    """
-    直接从 Network 级别抓 API 返回（通过 page.evaluate hook）
-    """
+print("初始化物理鼠标依赖...")
+os.system("sudo apt-get update > /dev/null 2>&1")
+os.system("sudo apt-get install -y xdotool > /dev/null 2>&1")
 
-    try:
-        data = sb.execute_script("""
-            return window.__LAST_VOTE_RESPONSE || null;
-        """)
-        return data
-    except:
-        return None
-
-
-# --------------------------
-# 注入 XHR Hook（关键稳定点）
-# --------------------------
-def inject_api_hook(sb):
-    sb.execute_script("""
-        window.__LAST_VOTE_RESPONSE = null;
-
-        const origFetch = window.fetch;
-
-        window.fetch = async function(...args) {
-            const res = await origFetch.apply(this, args);
-
-            try {
-                if (args[0] && args[0].includes('/vote')) {
-                    const clone = res.clone();
-                    clone.json().then(data => {
-                        window.__LAST_VOTE_RESPONSE = data;
-                    }).catch(()=>{});
-                }
-            } catch(e) {}
-
-            return res;
-        };
-    """)
-
-
-# --------------------------
-# 主任务
-# --------------------------
-def run_task(target):
+for target in TARGETS:
     name = target["name"]
     url = target["url"]
-
+    print(f"\n开始处理节点: [{name}]")
+    
     try:
-        with SB(uc=True, proxy=PROXY, headless=False, window_size="1920,1080") as sb:
-
-            print(f"[{name}] 打开页面")
+        with SB(uc=True, proxy=proxy_str, headless=False, window_size="1920,1080") as sb:
+            print(f"正在访问目标网址: {url}")
+            sb.driver.set_window_position(0, 0)
             sb.open(url)
-            sb.sleep(8)
-
-            # 注入 API hook（核心）
-            inject_api_hook(sb)
-
-            # 记录初始状态（API真值）
-            sb.sleep(3)
-            old_data = extract_api_vote(sb)
-
-            old_hours = None
-            if old_data and "hours_remaining" in old_data:
-                old_hours = float(old_data["hours_remaining"])
-                print(f"[{name}] 当前剩余时间: {old_hours}")
-
-            # --------------------------
-            # 点击 Vote（只触发，不做判断）
-            # --------------------------
-            print(f"[{name}] 点击 Vote")
-
-            sb.execute_script("""
-                let btns = document.querySelectorAll('button, a, div');
-                for (let b of btns) {
-                    let t = (b.innerText || '').toLowerCase();
-                    if (t.includes('vote')) {
-                        b.click();
-                        break;
-                    }
-                }
-            """)
-
-            # --------------------------
-            # 等待 API 回包
-            # --------------------------
-            print(f"[{name}] 等待 API 返回...")
-
-            result = None
-            for _ in range(30):
-                result = extract_api_vote(sb)
-                if result:
-                    break
-                time.sleep(1)
-
-            # --------------------------
-            # 判断核心（唯一真相）
-            # --------------------------
-            if not result:
-                return "❌ 未获取到 API 返回"
-
-            success = result.get("success", False)
-            new_hours = result.get("hours_remaining", None)
-
-            # --------------------------
-            # 精准判断
-            # --------------------------
-            if success and new_hours is not None:
-
-                if old_hours is not None:
-                    if float(new_hours) > float(old_hours):
-                        status = "✅ 续期成功"
-                    else:
-                        status = "⚠️ API成功但时间未变化"
-                else:
-                    status = "✅ API成功（无对比值）"
-
-                msg = f"{status}\n{old_hours} → {new_hours}"
-
-            else:
-                msg = f"❌ 续期失败: {result}"
-
-            # 截图
+            sb.sleep(6) 
+            
             os.makedirs("screenshots", exist_ok=True)
-            sb.save_screenshot(f"screenshots/{name}.png")
+            sb.save_screenshot(f"screenshots/{name}_1_page_loaded.png")
 
-            return msg
+            print("尝试点击初始续期按钮...")
+   
+            js_click_code = """
+            let step1_els = document.querySelectorAll('button, a, input, div, span');
+            for (let i = step1_els.length - 1; i >= 0; i--) {
+                let el = step1_els[i];
+                let text = (el.innerText || el.value || '').toUpperCase();
+                if (text.includes('ADD 90')) {
+                    el.click();
+                    break;
+                }
+            }
+            """
+            sb.execute_script(js_click_code)
+            
+            try:
+                sb.click('xpath=//*[contains(translate(., "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"), "add 90")]', timeout=2)
+            except:
+                pass
+
+            print("等待人机验证加载...")
+            time.sleep(6) 
+            
+            print("执行验证框区域点击 (4x4 网格)...")
+            xs = [790, 810, 830, 850]
+            ys = [540, 560, 580, 600]
+            
+            for y in ys:
+                for x in xs:
+                    os.system(f"xdotool mousemove {x} {y} click 1")
+                    time.sleep(0.1)
+            
+            print("点击完成")
+            time.sleep(8)
+            
+            print("尝试点击最后的 [VOTE - ADDS 90 MINUTES] 确认按钮...")
+            js_vote_click = """
+            let step2_els = document.querySelectorAll('button, a, input, div, span');
+            for (let i = step2_els.length - 1; i >= 0; i--) {
+                let el = step2_els[i];
+                let text = (el.innerText || '').toUpperCase();
+                if (text.includes('VOTE') || text.includes('SUCCESS')) {
+                    el.click();
+                    break;
+                }
+            }
+            """
+            sb.execute_script(js_vote_click)
+            
+            try:
+                sb.click('xpath=//*[contains(translate(., "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"), "vote")]', timeout=2)
+            except:
+                pass
+            
+            print("等待 16 秒广告或最终加载时间...")
+            time.sleep(16)
+            
+            print("获取页面剩余时间...")
+            page_text = sb.get_text("body")
+            time_match = re.search(r'\d{2}:\d{2}:\d{2}', page_text)
+            remaining_time = time_match.group(0) if time_match else "未知"
+            print(f"提取到时间: {remaining_time}")
+                
+            page_text_lower = page_text.lower()
+            if "90 minutes added" in page_text_lower or "extended this server recently" in page_text_lower or "success" in page_text_lower:
+                status = "✅ 续期成功"
+            else:
+                status = "⚠️ 状态未知"
+
+            try:
+                sb.save_screenshot(f"screenshots/{name}_2_result.png")
+            except:
+                pass
+            
+            task_results.append({"name": name, "status": status, "time": remaining_time})
 
     except Exception as e:
-        traceback.print_exc()
-        return f"❌ 崩溃: {e}"
+        print(f"节点 [{name}] 执行过程中发生异常: {e}")
+        task_results.append({"name": name, "status": "❌ 执行失败", "time": "未知"})
 
-
-# --------------------------
-# 主入口
-# --------------------------
-if __name__ == "__main__":
-    print("\n===== V7 稳定 API 版启动 =====")
-
-    results = []
-    for t in TARGETS:
-        res = run_task(t)
-        results.append(res)
-
-    report = "🤖 G4F 续期报告\n-------------------\n" + "\n".join(results)
-
-    print(report)
-    tg(report)
+print("\n所有节点处理完毕，正在统一发送综合汇报...")
+send_unified_tg(task_results)
