@@ -57,13 +57,13 @@ def has_challenge(sb):
     return ("turnstile" in html or "verify" in html or "challenge" in html)
 
 # =========================
-# JS雷达：找主页面按钮坐标
+# JS雷达：找主页面按钮坐标 (修复重名 els1)
 # =========================
 def scan_main_btn(sb):
     return sb.execute_script("""
         window._target1 = null;
-        const els = [...document.querySelectorAll('button,a,div,span')];
-        for (let el of els.reverse()) {
+        const els1 = [...document.querySelectorAll('button,a,div,span')];
+        for (let el of els1.reverse()) {
             const t = (el.innerText || '').toUpperCase().replace(/\\s+/g,' ');
             if (t.includes('ADD 90') || t.includes('+ VOTE +')) {
                 const r = el.getBoundingClientRect();
@@ -77,13 +77,13 @@ def scan_main_btn(sb):
     """)
 
 # =========================
-# JS雷达：找弹窗内确认按钮坐标
+# JS雷达：找弹窗内确认按钮坐标 (修复重名 els2)
 # =========================
 def scan_confirm_btn(sb):
     return sb.execute_script("""
         window._target2 = null;
-        const els = [...document.querySelectorAll('button,a,div,span')];
-        for (let el of els.reverse()) {
+        const els2 = [...document.querySelectorAll('button,a,div,span')];
+        for (let el of els2.reverse()) {
             const t = (el.innerText || '').toUpperCase().replace(/\\s+/g,' ');
             if (t.includes('ADDS 90 MINUTES') || t.includes('VOTE - ADDS')) {
                 const r = el.getBoundingClientRect();
@@ -110,7 +110,6 @@ def judge(sb, old_time):
     changed = (now_time != "") and (now_time != old_time)
     
     # 2. 结合手动截图的新版关键词判定
-    # 寻找按钮变成 "wait 5 min" 或列表中出现 "+90m"
     keywords = ["wait 5 min", "wait 4 min", "+90m", "90 minutes added", "extended this server recently"]
     hit = any(k in text for k in keywords)
 
@@ -164,18 +163,16 @@ def run_node(t, old_time):
             # 第二阶段：弹窗CF验证物理矩阵轰炸
             # =====================
             print(f"[{name}] 启动 CF 验证框物理矩阵轰炸 (无视跨域护盾)...")
-            # 在 1920x1080 分辨率下，对弹窗偏左侧的 CF 勾选区域进行密集扫射
             xs = [810, 830, 850, 870]
             ys = [530, 550, 570, 590]
             
             for y in ys:
                 for x in xs:
-                    # 模拟真实人类的鼠标移动轨迹并点击
                     os.system(f"xdotool mousemove {x} {y} click 1")
-                    time.sleep(0.08) # 微小延迟，防止点击过快被判定为机器
+                    time.sleep(0.08) 
             
             print(f"[{name}] 轰炸完毕，等待 CF 验证通过...")
-            sb.sleep(8) # 留出足够的时间让盾牌转圈和打绿勾
+            sb.sleep(8) 
 
             # =====================
             # 第三阶段：弹窗确认按钮雷达 + 物理狙击
@@ -187,9 +184,10 @@ def run_node(t, old_time):
                 os.system(f"xdotool mousemove {cx2} {cy2} click 1")
             else:
                 print(f"[{name}] ⚠️ 弹窗按钮雷达未命中，尝试 JS 强点兜底...")
+                # 修复重名 els3
                 sb.execute_script("""
-                    const els = [...document.querySelectorAll('button,a,div,span')];
-                    for (let el of els.reverse()) {
+                    const els3 = [...document.querySelectorAll('button,a,div,span')];
+                    for (let el of els3.reverse()) {
                         const t = (el.innerText || '').toUpperCase();
                         if (t.includes('ADDS 90') || t.includes('VOTE - ADDS')) el.click();
                     }
@@ -223,13 +221,11 @@ def run_node(t, old_time):
 # 主程序
 # =========================
 def main():
-    print("===== v3 矩阵轰炸裁决版 启动 =====")
+    print("===== v3 矩阵轰炸裁决版 (变量修复版) 启动 =====")
     
-    # 提前安装 xdotool
     os.system("sudo apt-get update > /dev/null 2>&1")
     os.system("sudo apt-get install -y xdotool > /dev/null 2>&1")
 
-    # 读取过去的记录
     history_times = load_old_times()
     results = []
 
@@ -240,14 +236,11 @@ def main():
         r = run_node(t, old_time)
         results.append(r)
         
-        # 更新记忆中的时间
         if r["time"] and r["time"] != "未知":
             history_times[node_name] = r["time"]
 
-    # 循环结束后，统一保存最新的时间记录
     save_new_times(history_times)
 
-    # 汇报组装
     msg = ["🤖 v3 自动续期终极报告"]
     for r in results:
         msg.append("-------------------")
