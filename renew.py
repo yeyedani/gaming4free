@@ -59,17 +59,25 @@ for target in TARGETS:
             # -----------------------------------------------------
             # 🚀 核心连招：唤醒弹窗 -> 物理破盾 -> 绝杀确认
             # -----------------------------------------------------
-            print("【第一阶段】尝试点击主页按钮唤醒弹窗...")
+            print("【第一阶段】尝试点击主页按钮唤醒弹窗 (终极容错版)...")
             js_click_phase1 = """
             let els = document.querySelectorAll('button, a, div, span');
             for (let i = els.length - 1; i >= 0; i--) {
-                let text = (els[i].innerText || '').toUpperCase();
-                if (text.includes('+ VOTE + ADD 90 MIN') || text === 'VOTE') {
+                // 核心修复：用正则表达式把所有换行符、隐藏空格全部压扁成一个空格
+                let text = (els[i].innerText || '').toUpperCase().replace(/\\s+/g, ' ');
+                // 只要文本里包含最核心的 ADD 90 MIN，绝不放过
+                if (text.includes('ADD 90 MIN')) {
                     els[i].click();
                 }
             }
             """
             sb.execute_script(js_click_phase1)
+            
+            # 增加双重保险：如果前端防了 JS 遍历，用原生 XPath 强行补一刀
+            try:
+                sb.click('xpath=//*[contains(translate(., "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"), "add 90")]', timeout=2)
+            except:
+                pass
             
             print("等待弹窗居中加载...")
             time.sleep(4) 
@@ -81,12 +89,13 @@ for target in TARGETS:
             time.sleep(6)
             
             print("【第三阶段】点击弹窗内部的最终确认按钮...")
+            # 修复了 els 变量重名报错问题，改为 els2
             js_click_phase2 = """
-            let els = document.querySelectorAll('button, a, div, span');
-            for (let i = els.length - 1; i >= 0; i--) {
-                let text = (els[i].innerText || '').toUpperCase();
+            let els2 = document.querySelectorAll('button, a, div, span');
+            for (let i = els2.length - 1; i >= 0; i--) {
+                let text = (els2[i].innerText || '').toUpperCase();
                 if (text.includes('ADDS 90 MINUTES') || text.includes('VOTE - ADDS')) {
-                    els[i].click();
+                    els2[i].click();
                 }
             }
             """
