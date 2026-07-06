@@ -5,8 +5,7 @@ from seleniumbase import SB
 # 💡 G4F.GG 自动续期 (物理狙击破盾版)
 # ==========================================
 TARGETS = [
-    {"name": "renqi", "url": "https://g4f.gg/renqi"},
-    {"name": "heisi", "url": "https://g4f.gg/heisi"}
+   {"name": "nidaye", "url": "https://gaming4free.net/servers/nidaye"}
 ]
 
 TG_TOKEN = os.getenv("TG_TOKEN", "")
