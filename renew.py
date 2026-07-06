@@ -24,28 +24,32 @@ def extract_time(text):
     m = re.search(r'\d{2}:\d{2}:\d{2}', text)
     return m.group(0) if m else None
 
+def time_to_seconds(t_str):
+    if not t_str: return 0
+    h, m, s = map(int, t_str.split(':'))
+    return h * 3600 + m * 60 + s
+
 def run_task(target):
     name, url = target["name"], target["url"]
     try:
         with SB(uc=True, proxy=PROXY, headless=False, window_size="1920,1080") as sb:
             print(f"[{name}] 打开页面")
-            # 隐藏 webdriver 指纹 (try包裹防止部分环境二次注入报错)
             try:
                 sb.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-            except:
-                pass
+            except: pass
+            
             sb.driver.set_window_position(0, 0)
             sb.open(url)
             
-            print(f"[{name}] 等待 Cloudflare...")
+            print(f"[{name}] 等待网页加载...")
             sb.sleep(10)
             
             initial_text = sb.get_text("body")
             old_time = extract_time(initial_text)
+            old_sec = time_to_seconds(old_time)
             print(f"[{name}] 记录初始剩余时间: {old_time}")
             
             print(f"[{name}] 寻找 Vote 按钮...")
-            # 【彻底断绝报错】：整段 JS 零 return，只做变量赋值
             sb.execute_script("""
                 window._btn_coords = null;
                 let els1 = document.querySelectorAll('button, div, span');
@@ -53,12 +57,16 @@ def run_task(target):
                     let txt = (els1[i].innerText || '').toUpperCase();
                     if (txt.includes('ADD 90') || txt.includes('VOTE')) {
                         let r = els1[i].getBoundingClientRect();
-                        window._btn_coords = [r.left + r.width/2, r.top + r.height/2];
-                        break;
+                        if (r.width > 0 && r.height > 0) {
+                            let ui_offset = window.outerHeight - window.innerHeight;
+                            let sx = window.screenX || 0;
+                            let sy = window.screenY || 0;
+                            window._btn_coords = [Math.floor(sx + r.left + r.width/2), Math.floor(sy + ui_offset + r.top + r.height/2)];
+                            break;
+                        }
                     }
                 }
             """)
-            # 使用 sb.evaluate 直接读取全局变量，绕过 execute_script 的返回值包裹机制
             coords = sb.evaluate("window._btn_coords")
             
             if coords:
@@ -67,13 +75,11 @@ def run_task(target):
             else:
                 print(f"[{name}] ⚠️ 未找到主页面 Vote 按钮！")
             
-            sb.sleep(8)
+            sb.sleep(6)
             
             print(f"[{name}] 等待验证器就绪...")
             for _ in range(10):
-                # 直接 evaluate 表达式，绝不写 return
-                is_ready = sb.evaluate("typeof turnstile !== 'undefined'")
-                if is_ready:
+                if sb.evaluate("typeof turnstile !== 'undefined'"):
                     break
                 time.sleep(2)
             
@@ -83,38 +89,49 @@ def run_task(target):
                     os.system(f"xdotool mousemove {x} {y} click 1")
                     time.sleep(0.2)
             
-            sb.sleep(12) 
-            
-            print(f"[{name}] 寻找确认按钮...")
-            # 【彻底断绝报错】：弹窗雷达同理，零 return
-            sb.execute_script("""
-                window._conf_coords = null;
-                let els2 = document.querySelectorAll('button, div, span');
-                for (let i = 0; i < els2.length; i++) {
-                    let txt = (els2[i].innerText || '').toUpperCase();
-                    if (txt.includes('ADDS 90')) {
-                        let r = els2[i].getBoundingClientRect();
-                        window._conf_coords = [r.left + r.width/2, r.top + r.height/2];
-                        break;
+            # 【终极修复】：轮询等待真正的确认按钮出现，绝不点 0,0
+            print(f"[{name}] 扫描弹窗确认按钮...")
+            conf = None
+            for _ in range(15): # 给 CF 盾 15秒的时间转绿勾
+                sb.execute_script("""
+                    window._conf_coords = null;
+                    let els2 = document.querySelectorAll('button, div, span');
+                    for (let i = 0; i < els2.length; i++) {
+                        let txt = (els2[i].innerText || '').toUpperCase();
+                        if (txt.includes('ADDS 90 MINUTES') || txt.includes('VOTE - ADDS')) {
+                            let r = els2[i].getBoundingClientRect();
+                            if (r.width > 0 && r.height > 0) { // 必须是真实可见的按钮
+                                let ui_offset = window.outerHeight - window.innerHeight;
+                                let sx = window.screenX || 0;
+                                let sy = window.screenY || 0;
+                                window._conf_coords = [Math.floor(sx + r.left + r.width/2), Math.floor(sy + ui_offset + r.top + r.height/2)];
+                                break;
+                            }
+                        }
                     }
-                }
-            """)
-            conf = sb.evaluate("window._conf_coords")
+                """)
+                conf = sb.evaluate("window._conf_coords")
+                if conf:
+                    break
+                time.sleep(1)
             
             if conf:
-                print(f"[{name}] 锁定弹窗确认按钮坐标: X={int(conf[0])}, Y={int(conf[1])}")
+                print(f"[{name}] 锁定真实确认按钮坐标: X={int(conf[0])}, Y={int(conf[1])}")
                 os.system(f"xdotool mousemove {int(conf[0])} {int(conf[1])} click 1")
             else:
-                print(f"[{name}] ⚠️ 未找到弹窗中的最终确认按钮！")
+                print(f"[{name}] ⚠️ 等待超时，未找到可见的最终确认按钮！")
             
-            print(f"[{name}] 监控提交结果，等待倒计时刷新...")
+            print(f"[{name}] 监控提交结果，等待倒计时暴涨...")
             success = False
             new_time = None
             for i in range(40):
                 text = sb.get_text("body")
                 new_time = extract_time(text)
-                if new_time and old_time and new_time != old_time:
-                    print(f"[{name}] 🎉 倒计时已刷新: {old_time} -> {new_time}")
+                new_sec = time_to_seconds(new_time)
+                
+                # 时间必须实打实地增加了至少 1 小时 (3600秒) 才算真成功！
+                if new_sec > old_sec + 3600:
+                    print(f"[{name}] 🎉 倒计时已暴涨: {old_time} -> {new_time}")
                     success = True
                     break
                 time.sleep(1)
@@ -125,14 +142,14 @@ def run_task(target):
             if success:
                 return f"✅ 续期成功 (新时间: {new_time})"
             else:
-                return "❌ 续期失败 (时间未变化)"
+                return f"❌ 续期失败 (最终时间: {new_time})"
 
     except Exception as e:
         traceback.print_exc()
         return f"❌ 崩溃: {e}"
 
 if __name__ == "__main__":
-    print("\n===== v6 无Return绝对防护版 启动 =====")
+    print("\n===== v7 真理审判版 启动 =====")
     results = []
     for t in TARGETS:
         res = run_task(t)
