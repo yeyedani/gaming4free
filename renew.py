@@ -1,9 +1,9 @@
-import os, time, json, re, urllib.request
+import os, sys, time, urllib.request, json, re
 from seleniumbase import SB
 
-# =========================
-# CONFIG
-# =========================
+# ==========================================
+# 💡 G4F.GG 自动续期 (物理雷达狙击终极版)
+# ==========================================
 TARGETS = [
     {"name": "nidaye", "url": "https://g4f.gg/nidaye"}
 ]
@@ -11,169 +11,134 @@ TARGETS = [
 TG_TOKEN = os.getenv("TG_TOKEN", "")
 TG_CHAT = os.getenv("TG_CHAT_ID", "")
 
-PROXY = "socks5://127.0.0.1:40000"
-
-# =========================
-# TG 通知
-# =========================
-def send_tg(msg):
-    if not TG_TOKEN or not TG_CHAT:
-        return
-    try:
-        url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
-        data = json.dumps({"chat_id": TG_CHAT, "text": msg}).encode()
-        req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
-        urllib.request.urlopen(req, timeout=10)
-    except Exception as e:
-        print("TG失败:", e)
-
-# =========================
-# 判断成功核心逻辑（工业版）
-# =========================
-def judge(page_text, old_time):
-    text = page_text.lower()
-
-    time_match = re.search(r'\d{2}:\d{2}:\d{2}', page_text)
-    current_time = time_match.group(0) if time_match else ""
-
-    # 1. 时间变化（最可靠）
-    time_changed = current_time and current_time != old_time
-
-    # 2. 成功关键词（扩展）
-    keywords = [
-        "90 minutes",
-        "added",
-        "success",
-        "vote",
-        "完成",
-        "成功",
-        "extended",
-    ]
-    hit_keyword = any(k in text for k in keywords)
-
-    # 3. 综合判断
-    if time_changed or hit_keyword:
-        status = "✅ 续期成功"
-    elif current_time:
-        status = "⚠️ 已加载但未确认"
-    else:
-        status = "❌ 页面异常"
-
-    return status, current_time
-
-
-# =========================
-# 主逻辑
-# =========================
-def run_target(name, url):
-
-    old_time = os.getenv(f"LAST_TIME_{name}", "")
-    result = {
-        "name": name,
-        "status": "❌ 未执行",
-        "time": "未知"
-    }
-
-    for attempt in range(3):  # ⭐ 自动重试
+def send_unified_tg(results):
+    if TG_TOKEN and TG_CHAT:
         try:
-            print(f"[{name}] 第 {attempt+1} 次尝试")
-
-            with SB(
-                uc=True,
-                proxy=PROXY,
-                headless=False,
-                window_size="1920,1080"
-            ) as sb:
-
-                sb.open(url)
-                sb.sleep(6)
-
-                # ======================
-                # 1. 点击主页按钮（稳健版）
-                # ======================
-                try:
-                    sb.uc_click("text=ADD 90 MIN", timeout=5)
-                except:
-                    sb.execute_script("""
-                        [...document.querySelectorAll('button,a,div,span')]
-                        .reverse()
-                        .forEach(e=>{
-                            if((e.innerText||'').toLowerCase().includes('add 90')){
-                                e.click();
-                            }
-                        });
-                    """)
-
-                sb.sleep(4)
-
-                # ======================
-                # 2. 弹窗确认
-                # ======================
-                try:
-                    sb.uc_click("text=90 MIN", timeout=5)
-                except:
-                    sb.execute_script("""
-                        [...document.querySelectorAll('button,a,div,span')]
-                        .forEach(e=>{
-                            if((e.innerText||'').toLowerCase().includes('90')){
-                                e.click();
-                            }
-                        });
-                    """)
-
-                sb.sleep(20)
-
-                # ======================
-                # 3. 结果分析
-                # ======================
-                page_text = sb.get_text("body")
-
-                status, current_time = judge(page_text, old_time)
-
-                result["status"] = status
-                result["time"] = current_time or "未知"
-
-                # 保存时间状态
-                if current_time:
-                    os.environ[f"LAST_TIME_{name}"] = current_time
-
-                # 截图
-                os.makedirs("screenshots", exist_ok=True)
-                sb.save_screenshot(f"screenshots/{name}.png")
-
-                return result
-
+            # 构建统一的消息面板
+            lines = ["🤖 G4F 续期综合汇报"]
+            for res in results:
+                lines.append("-----------------------")
+                lines.append(f"节点: {res['name']}")
+                lines.append(f"状态: {res['status']}")
+                lines.append(f"剩余时间: {res['time']}")
+            
+            msg = "\n".join(lines)
+            url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
+            data = json.dumps({"chat_id": TG_CHAT, "text": msg}).encode('utf-8')
+            req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'})
+            urllib.request.urlopen(req, timeout=10)
+            print("Telegram 综合通知发送成功。")
         except Exception as e:
-            print(f"[{name}] 失败:", e)
-            time.sleep(5)
+            print(f"发送通知失败: {e}")
 
-    result["status"] = "❌ 连续失败"
-    return result
+print("\n===== 开始执行 G4F 自动续期 =====")
 
+proxy_str = "socks5://127.0.0.1:40000"
+task_results = []
 
-# =========================
-# 执行全部节点
-# =========================
-print("===== G4F 稳定挂机启动 =====")
+print("初始化物理鼠标依赖...")
+os.system("sudo apt-get update > /dev/null 2>&1")
+os.system("sudo apt-get install -y xdotool > /dev/null 2>&1")
 
-results = []
+for target in TARGETS:
+    name = target["name"]
+    url = target["url"]
+    print(f"\n开始处理节点: [{name}]")
+    
+    try:
+        # 确保每次循环都开启一个全新的、未被拦截的纯净浏览器进程
+        with SB(uc=True, proxy=proxy_str, headless=False, window_size="1920,1080") as sb:
+            print(f"正在访问目标网址: {url}")
+            sb.driver.set_window_position(0, 0)
+            sb.open(url)
+            sb.sleep(6) 
+            
+            os.makedirs("screenshots", exist_ok=True)
+            sb.save_screenshot(f"screenshots/{name}_1_page_loaded.png")
 
-for t in TARGETS:
-    r = run_target(t["name"], t["url"])
-    results.append(r)
+            # -----------------------------------------------------
+            # 🚀 核心连招：雷达扫描 -> 物理破盾 -> 绝杀确认
+            # -----------------------------------------------------
+            print("【第一阶段】雷达扫描按钮坐标并执行纯物理点击...")
+            # 用 JS 雷达只获取按钮坐标，绝对不去触发 click
+            js_get_coords = """
+            let els = document.querySelectorAll('button, a, div, span');
+            for (let i = els.length - 1; i >= 0; i--) {
+                // 核心修复：用正则表达式把所有换行符、隐藏空格全部压扁成一个空格
+                let text = (els[i].innerText || '').toUpperCase().replace(/\\s+/g, ' ');
+                if (text.includes('ADD 90 MIN') || text.includes('+ VOTE +')) {
+                    let rect = els[i].getBoundingClientRect();
+                    // 返回按钮中心点的 X 和 Y 坐标
+                    return [rect.x + rect.width/2, rect.y + rect.height/2];
+                }
+            }
+            return null;
+            """
+            coords = sb.execute_script(js_get_coords)
+            
+            if coords:
+                click_x, click_y = int(coords[0]), int(coords[1])
+                print(f"雷达锁定目标！坐标: X={click_x}, Y={click_y}")
+                # 调动系统物理鼠标进行双击，确保点透
+                os.system(f"xdotool mousemove {click_x} {click_y} click 1")
+                time.sleep(0.5)
+                os.system(f"xdotool mousemove {click_x} {click_y} click 1")
+            else:
+                print("⚠️ 雷达未能扫到按钮，尝试使用 Selenium 原生强点...")
+                try:
+                    sb.click('xpath=//*[contains(translate(., "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"), "add 90")]', timeout=3)
+                except:
+                    pass
+            
+            print("等待弹窗居中加载...")
+            time.sleep(4) 
+            
+            print("【第二阶段】执行物理破盾与黄金坐标补刀...")
+            os.system("xdotool mousemove 960 540 click 1")
+            time.sleep(1)
+            os.system("xdotool mousemove 945 641 click 1")
+            time.sleep(6)
+            
+            print("【第三阶段】点击弹窗内部的最终确认按钮...")
+            # 修复了 els 变量重名报错问题，改为 els2
+            js_click_phase2 = """
+            let els2 = document.querySelectorAll('button, a, div, span');
+            for (let i = els2.length - 1; i >= 0; i--) {
+                let text = (els2[i].innerText || '').toUpperCase();
+                if (text.includes('ADDS 90 MINUTES') || text.includes('VOTE - ADDS')) {
+                    els2[i].click();
+                }
+            }
+            """
+            sb.execute_script(js_click_phase2)
 
-# =========================
-# 汇总报告
-# =========================
-msg = ["🤖 G4F 稳定续期报告"]
+            print("绝杀完成，等待广告时间与最终结算文本...")
+            time.sleep(25)
+            # -----------------------------------------------------
 
-for r in results:
-    msg.append("-------------------")
-    msg.append(f"节点: {r['name']}")
-    msg.append(f"状态: {r['status']}")
-    msg.append(f"时间: {r['time']}")
+            print("获取页面剩余时间...")
+            page_text = sb.get_text("body")
+            time_match = re.search(r'\d{2}:\d{2}:\d{2}', page_text)
+            remaining_time = time_match.group(0) if time_match else "未知"
+            print(f"提取到时间: {remaining_time}")
+                
+            page_text_lower = page_text.lower()
+            if "90 minutes added" in page_text_lower or "extended this server recently" in page_text_lower:
+                status = "✅ 续期成功"
+            else:
+                status = "⚠️ 状态未知"
 
-final_msg = "\n".join(msg)
+            try:
+                sb.save_screenshot(f"screenshots/{name}_2_result.png")
+            except:
+                pass
+            
+            # 记录当前节点的成功状态
+            task_results.append({"name": name, "status": status, "time": remaining_time})
 
-print(final_msg)
-send_tg(final_msg)
+    except Exception as e:
+        print(f"节点 [{name}] 执行过程中发生异常: {e}")
+        task_results.append({"name": name, "status": "❌ 执行失败", "time": "未知"})
+
+print("\n所有节点处理完毕，正在统一发送综合汇报...")
+send_unified_tg(task_results)
