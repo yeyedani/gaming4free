@@ -2,7 +2,7 @@ import os, sys, time, urllib.request, json, re
 from seleniumbase import SB
 
 # ==========================================
-# 💡 G4F.GG 自动续期 (物理雷达狙击终极版)
+# 💡 G4F.GG 自动续期 (全局变量防报错终极版)
 # ==========================================
 TARGETS = [
     {"name": "nidaye", "url": "https://g4f.gg/nidaye"}
@@ -60,21 +60,24 @@ for target in TARGETS:
             # 🚀 核心连招：雷达扫描 -> 物理破盾 -> 绝杀确认
             # -----------------------------------------------------
             print("【第一阶段】雷达扫描按钮坐标并执行纯物理点击...")
-            # 用 JS 雷达只获取按钮坐标，绝对不去触发 click
+            
+            # 核心修复：完全弃用 return，将坐标存入 window.myTargetCoords
             js_get_coords = """
+            window.myTargetCoords = null;
             let els = document.querySelectorAll('button, a, div, span');
             for (let i = els.length - 1; i >= 0; i--) {
-                // 核心修复：用正则表达式把所有换行符、隐藏空格全部压扁成一个空格
                 let text = (els[i].innerText || '').toUpperCase().replace(/\\s+/g, ' ');
                 if (text.includes('ADD 90 MIN') || text.includes('+ VOTE +')) {
                     let rect = els[i].getBoundingClientRect();
-                    // 返回按钮中心点的 X 和 Y 坐标
-                    return [rect.x + rect.width/2, rect.y + rect.height/2];
+                    window.myTargetCoords = [rect.x + rect.width/2, rect.y + rect.height/2];
+                    break;
                 }
             }
-            return null;
             """
-            coords = sb.execute_script(js_get_coords)
+            sb.execute_script(js_get_coords)
+            
+            # 使用单行安全代码提取坐标，绝不报错
+            coords = sb.execute_script("return window.myTargetCoords;")
             
             if coords:
                 click_x, click_y = int(coords[0]), int(coords[1])
@@ -100,7 +103,6 @@ for target in TARGETS:
             time.sleep(6)
             
             print("【第三阶段】点击弹窗内部的最终确认按钮...")
-            # 修复了 els 变量重名报错问题，改为 els2
             js_click_phase2 = """
             let els2 = document.querySelectorAll('button, a, div, span');
             for (let i = els2.length - 1; i >= 0; i--) {
