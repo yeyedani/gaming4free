@@ -50,17 +50,18 @@ def run_task(target):
             print(f"[{name}] 记录初始剩余时间: {old_time}")
             
             print(f"[{name}] 寻找 Vote 按钮...")
+            # 【修复】：全部使用 var，防止多次执行引发重复声明错误
             sb.execute_script("""
                 window._btn_coords = null;
-                let els1 = document.querySelectorAll('button, div, span');
-                for (let i = 0; i < els1.length; i++) {
-                    let txt = (els1[i].innerText || '').toUpperCase();
+                var els1 = document.querySelectorAll('button, div, span');
+                for (var i = 0; i < els1.length; i++) {
+                    var txt = (els1[i].innerText || '').toUpperCase();
                     if (txt.includes('ADD 90') || txt.includes('VOTE')) {
-                        let r = els1[i].getBoundingClientRect();
+                        var r = els1[i].getBoundingClientRect();
                         if (r.width > 0 && r.height > 0) {
-                            let ui_offset = window.outerHeight - window.innerHeight;
-                            let sx = window.screenX || 0;
-                            let sy = window.screenY || 0;
+                            var ui_offset = window.outerHeight - window.innerHeight;
+                            var sx = window.screenX || 0;
+                            var sy = window.screenY || 0;
                             window._btn_coords = [Math.floor(sx + r.left + r.width/2), Math.floor(sy + ui_offset + r.top + r.height/2)];
                             break;
                         }
@@ -89,21 +90,21 @@ def run_task(target):
                     os.system(f"xdotool mousemove {x} {y} click 1")
                     time.sleep(0.2)
             
-            # 【终极修复】：轮询等待真正的确认按钮出现，绝不点 0,0
             print(f"[{name}] 扫描弹窗确认按钮...")
             conf = None
-            for _ in range(15): # 给 CF 盾 15秒的时间转绿勾
+            for _ in range(15):
+                # 【修复】：全部使用 var，保证轮询不出错
                 sb.execute_script("""
                     window._conf_coords = null;
-                    let els2 = document.querySelectorAll('button, div, span');
-                    for (let i = 0; i < els2.length; i++) {
-                        let txt = (els2[i].innerText || '').toUpperCase();
+                    var els2 = document.querySelectorAll('button, div, span');
+                    for (var j = 0; j < els2.length; j++) {
+                        var txt = (els2[j].innerText || '').toUpperCase();
                         if (txt.includes('ADDS 90 MINUTES') || txt.includes('VOTE - ADDS')) {
-                            let r = els2[i].getBoundingClientRect();
-                            if (r.width > 0 && r.height > 0) { // 必须是真实可见的按钮
-                                let ui_offset = window.outerHeight - window.innerHeight;
-                                let sx = window.screenX || 0;
-                                let sy = window.screenY || 0;
+                            var r = els2[j].getBoundingClientRect();
+                            if (r.width > 0 && r.height > 0) { 
+                                var ui_offset = window.outerHeight - window.innerHeight;
+                                var sx = window.screenX || 0;
+                                var sy = window.screenY || 0;
                                 window._conf_coords = [Math.floor(sx + r.left + r.width/2), Math.floor(sy + ui_offset + r.top + r.height/2)];
                                 break;
                             }
@@ -129,7 +130,6 @@ def run_task(target):
                 new_time = extract_time(text)
                 new_sec = time_to_seconds(new_time)
                 
-                # 时间必须实打实地增加了至少 1 小时 (3600秒) 才算真成功！
                 if new_sec > old_sec + 3600:
                     print(f"[{name}] 🎉 倒计时已暴涨: {old_time} -> {new_time}")
                     success = True
@@ -149,7 +149,7 @@ def run_task(target):
         return f"❌ 崩溃: {e}"
 
 if __name__ == "__main__":
-    print("\n===== v7 真理审判版 启动 =====")
+    print("\n===== v8 无限轮询防爆版 启动 =====")
     results = []
     for t in TARGETS:
         res = run_task(t)
