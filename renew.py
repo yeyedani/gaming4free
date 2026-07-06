@@ -25,57 +25,93 @@ def run_task(target):
     name, url = target["name"], target["url"]
     try:
         with SB(uc=True, proxy=PROXY, headless=False, window_size="1920,1080") as sb:
+            # 1. 深度伪装
             sb.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
             sb.driver.set_window_position(0, 0)
             sb.open(url)
             sb.sleep(10)
             
-            # 【修复版雷达】使用匿名函数包裹 return
+            # 2. 阶段一：狙击主 Vote 按钮
+            # 【彻底修复】：去掉最外层的 return 关键字，直接让立即执行函数(IIFE)自己计算并吐出结果
             coords = sb.execute_script("""
-                return (function() {
-                    const el = [...document.querySelectorAll('button, div, span')].find(e => 
-                        e.innerText.toUpperCase().includes('ADD 90') || e.innerText.toUpperCase().includes('VOTE')
-                    );
-                    if (el) {
-                        const r = el.getBoundingClientRect();
-                        return [r.left + r.width/2, r.top + r.height/2];
+                (function() {
+                    const els = document.querySelectorAll('button, div, span');
+                    for (let e of els) {
+                        let txt = (e.innerText || '').toUpperCase();
+                        if (txt.includes('ADD 90') || txt.includes('VOTE')) {
+                            const r = e.getBoundingClientRect();
+                            return [r.left + r.width/2, r.top + r.height/2];
+                        }
                     }
                     return null;
                 })();
             """)
+            
             if coords:
                 os.system(f"xdotool mousemove {int(coords[0])} {int(coords[1])} click 1")
             
             sb.sleep(8)
             
-            # 【修复版确认狙击】使用匿名函数包裹 return
+            # 3. 阶段二：呼吸式 CF 盾检测与轰炸
+            print(f"[{name}] 等待验证器就绪...")
+            for _ in range(10):
+                # 【彻底修复】：去掉这里的 return
+                if sb.execute_script("typeof turnstile !== 'undefined'"):
+                    break
+                time.sleep(2)
+            
+            print(f"[{name}] 执行物理矩阵轰炸...")
+            for y in [540, 560, 580]:
+                for x in [810, 830, 850]:
+                    os.system(f"xdotool mousemove {x} {y} click 1")
+                    time.sleep(0.2)
+            
+            sb.sleep(12)
+            
+            # 4. 阶段三：最终确认狙击
+            # 【彻底修复】：去掉最外层的 return
             conf = sb.execute_script("""
-                return (function() {
-                    const el = [...document.querySelectorAll('button, div, span')].find(e => 
-                        e.innerText.toUpperCase().includes('ADDS 90')
-                    );
-                    if (el) {
-                        const r = el.getBoundingClientRect();
-                        return [r.left + r.width/2, r.top + r.height/2];
+                (function() {
+                    const els = document.querySelectorAll('button, div, span');
+                    for (let e of els) {
+                        let txt = (e.innerText || '').toUpperCase();
+                        if (txt.includes('ADDS 90')) {
+                            const r = e.getBoundingClientRect();
+                            return [r.left + r.width/2, r.top + r.height/2];
+                        }
                     }
                     return null;
                 })();
             """)
+            
             if conf:
                 os.system(f"xdotool mousemove {int(conf[0])} {int(conf[1])} click 1")
             
-            sb.sleep(20)
+            # 5. 阶段四：监听 API 状态
+            print(f"[{name}] 监控提交结果...")
+            success = False
+            for _ in range(40):
+                text = sb.get_text("body").lower()
+                if "voted" in text or "+90" in text or "wait" in text:
+                    success = True
+                    break
+                time.sleep(1)
+            
             sb.save_screenshot(f"{name}_final.png")
-            return "✅ 已尝试点击"
+            return f"{'✅ 续期成功' if success else '⚠️ 状态未知'}"
 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return f"❌ 崩溃: {e}"
 
-results = []
-for t in TARGETS:
-    res = run_task(t)
-    results.append({"name": t["name"], "status": res})
+# 主逻辑
+if __name__ == "__main__":
+    results = []
+    for t in TARGETS:
+        res = run_task(t)
+        results.append({"name": t["name"], "status": res})
 
-tg_msg = "🤖 G4F 自动续期汇报\n" + "\n".join([f"{r['name']}: {r['status']}" for r in results])
-tg(tg_msg)
-print(tg_msg)
+    tg_msg = "🤖 G4F 自动续期汇报\n" + "\n".join([f"{r['name']}: {r['status']}" for r in results])
+    tg(tg_msg)
+    print(tg_msg)
