@@ -2,7 +2,7 @@ import os, sys, time, urllib.request, json, re
 from seleniumbase import SB
 
 # ==========================================
-# 💡 G4F.GG 自动续期
+# 💡 G4F.GG 自动续期 (三段破窗终极版)
 # ==========================================
 TARGETS = [
     {"name": "nidaye", "url": "https://g4f.gg/nidaye"}
@@ -56,43 +56,46 @@ for target in TARGETS:
             os.makedirs("screenshots", exist_ok=True)
             sb.save_screenshot(f"screenshots/{name}_1_page_loaded.png")
 
-            print("尝试点击续期按钮...")
-            js_click_code = """
-            let els = document.querySelectorAll('button, a, input, div, span');
+            # -----------------------------------------------------
+            # 🚀 核心连招：唤醒弹窗 -> 物理破盾 -> 绝杀确认
+            # -----------------------------------------------------
+            print("【第一阶段】尝试点击主页按钮唤醒弹窗...")
+            js_click_phase1 = """
+            let els = document.querySelectorAll('button, a, div, span');
             for (let i = els.length - 1; i >= 0; i--) {
-                let el = els[i];
-                let text = (el.innerText || el.value || '').toUpperCase();
-                if (text.includes('ADD 90')) {
-                    el.click();
-                    break;
+                let text = (els[i].innerText || '').toUpperCase();
+                if (text.includes('+ VOTE + ADD 90 MIN') || text === 'VOTE') {
+                    els[i].click();
                 }
             }
             """
-            sb.execute_script(js_click_code)
+            sb.execute_script(js_click_phase1)
             
-            try:
-                sb.click('xpath=//*[contains(translate(., "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"), "add 90")]', timeout=2)
-            except:
-                pass
+            print("等待弹窗居中加载...")
+            time.sleep(4) 
+            
+            print("【第二阶段】执行物理破盾与黄金坐标补刀...")
+            os.system("xdotool mousemove 960 540 click 1")
+            time.sleep(1)
+            os.system("xdotool mousemove 945 641 click 1")
+            time.sleep(6)
+            
+            print("【第三阶段】点击弹窗内部的最终确认按钮...")
+            js_click_phase2 = """
+            let els = document.querySelectorAll('button, a, div, span');
+            for (let i = els.length - 1; i >= 0; i--) {
+                let text = (els[i].innerText || '').toUpperCase();
+                if (text.includes('ADDS 90 MINUTES') || text.includes('VOTE - ADDS')) {
+                    els[i].click();
+                }
+            }
+            """
+            sb.execute_script(js_click_phase2)
 
-            print("等待人机验证加载...")
-            time.sleep(6) 
-            
-            print("执行验证框区域点击 (4x4 网格)...")
-            xs = [790, 810, 830, 850]
-            ys = [540, 560, 580, 600]
-            
-            for y in ys:
-                for x in xs:
-                    os.system(f"xdotool mousemove {x} {y} click 1")
-                    time.sleep(0.1)
-            
-            print("点击完成，等待验证结果...")
-            time.sleep(8)
-            
-            print("等待广告时间，确保最终页面完全加载")
-            time.sleep(30)
-            
+            print("绝杀完成，等待广告时间与最终结算文本...")
+            time.sleep(25)
+            # -----------------------------------------------------
+
             print("获取页面剩余时间...")
             page_text = sb.get_text("body")
             time_match = re.search(r'\d{2}:\d{2}:\d{2}', page_text)
