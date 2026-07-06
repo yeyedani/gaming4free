@@ -1,199 +1,135 @@
 import os, time, json, urllib.request, re
 from seleniumbase import SB
 
-# =========================
-# CONFIG
-# =========================
 TARGETS = [
     {"name": "nidaye", "url": "https://gaming4free.net/servers/nidaye"}
 ]
 
 PROXY = "socks5://127.0.0.1:40000"
-
 TG_TOKEN = os.getenv("TG_TOKEN", "")
 TG_CHAT = os.getenv("TG_CHAT_ID", "")
 
-SCREENSHOT_DIR = "screenshots"
-os.makedirs(SCREENSHOT_DIR, exist_ok=True)
+os.system("sudo apt-get update > /dev/null 2>&1")
+os.system("sudo apt-get install -y xdotool > /dev/null 2>&1")
 
-
-# =========================
-# Telegram
-# =========================
 def tg(msg):
-    if not TG_TOKEN or not TG_CHAT:
-        return
+    if TG_TOKEN and TG_CHAT:
+        try:
+            url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
+            data = json.dumps({"chat_id": TG_CHAT, "text": msg}).encode('utf-8')
+            urllib.request.urlopen(urllib.request.Request(url, data, {'Content-Type': 'application/json'}), timeout=10)
+        except: pass
+
+def extract_time(text):
+    m = re.search(r'\d{2}:\d{2}:\d{2}', text)
+    return m.group(0) if m else None
+
+def run_task(target):
+    name, url = target["name"], target["url"]
     try:
-        url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
-        data = json.dumps({"chat_id": TG_CHAT, "text": msg}).encode()
-        req = urllib.request.Request(url, data, {"Content-Type": "application/json"})
-        urllib.request.urlopen(req, timeout=10)
-    except:
-        pass
-
-
-# =========================
-# Cloudflare 判断
-# =========================
-def wait_cloudflare(sb, timeout=30):
-    for _ in range(timeout):
-        html = sb.get_page_source().lower()
-        if "turnstile" not in html and "challenge" not in html:
-            return True
-        time.sleep(1)
-    return False
-
-
-# =========================
-# 安全 JS 执行（全部封装，避免污染）
-# =========================
-def js_find_button(sb, keyword):
-    return sb.execute_script(f"""
-        return (function() {{
-            const els = Array.from(document.querySelectorAll('button,div,span,a'));
-            for (let i = 0; i < els.length; i++) {{
-                const t = (els[i].innerText || '').toUpperCase();
-                if (t.includes('{keyword}')) {{
-                    const r = els[i].getBoundingClientRect();
-                    if (r.width > 0 && r.height > 0) {{
-                        return {{
-                            x: Math.floor(r.left + r.width/2),
-                            y: Math.floor(r.top + r.height/2)
-                        }};
-                    }}
-                }}
-            }}
-            return null;
-        }})();
-    """)
-
-
-def safe_click(sb, coords):
-    if not coords:
-        return False
-    x, y = int(coords["x"]), int(coords["y"])
-    os.system(f"xdotool mousemove {x} {y} click 1")
-    return True
-
-
-# =========================
-# 主流程
-# =========================
-def run_task(t):
-    name = t["name"]
-    url = t["url"]
-
-    try:
-        with SB(
-            uc=True,
-            proxy=PROXY,
-            headless=False,
-            window_size="1920,1080"
-        ) as sb:
-
-            print(f"[{name}] 打开页面")
+        with SB(uc=True, proxy=PROXY, headless=False, window_size="1920,1080") as sb:
+            sb.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+            sb.driver.set_window_position(0, 0)
             sb.open(url)
-            sb.sleep(8)
-
-            # =========================
-            # CF 等待（稳定版，不轰炸）
-            # =========================
-            print(f"[{name}] 等待 Cloudflare...")
-            wait_cloudflare(sb)
-
-            # =========================
-            # Step 1: 主按钮
-            # =========================
-            print(f"[{name}] 寻找 Vote 按钮...")
-            btn = js_find_button(sb, "ADD 90")
-            if not btn:
-                btn = js_find_button(sb, "VOTE")
-
-            if btn:
-                print(f"[{name}] 点击主按钮 {btn}")
-                safe_click(sb, btn)
-
-            sb.sleep(6)
-
-            # =========================
-            # Step 2: 弹窗确认按钮
-            # =========================
-            print(f"[{name}] 寻找确认按钮...")
-            confirm = js_find_button(sb, "ADDS 90")
-            if confirm:
-                print(f"[{name}] 点击确认 {confirm}")
-                safe_click(sb, confirm)
-            else:
-                print(f"[{name}] JS fallback click")
-                sb.execute_script("""
-                    (function(){
-                        const els = Array.from(document.querySelectorAll('button,div,span,a'));
-                        for (let i=0;i<els.length;i++){
-                            const t = (els[i].innerText || '').toUpperCase();
-                            if (t.includes('ADDS 90') || t.includes('VOTE')) {
-                                els[i].click();
-                                break;
-                            }
+            sb.sleep(10)
+            
+            # 记录初始时间
+            initial_text = sb.get_text("body")
+            old_time = extract_time(initial_text)
+            print(f"[{name}] 记录初始剩余时间: {old_time}")
+            
+            # 阶段一：主按钮雷达
+            coords = sb.execute_script("""
+                return (function() {
+                    const els = document.querySelectorAll('button, div, span');
+                    for (let e of els) {
+                        let txt = (e.innerText || '').toUpperCase();
+                        if (txt.includes('ADD 90') || txt.includes('VOTE')) {
+                            const r = e.getBoundingClientRect();
+                            return [r.left + r.width/2, r.top + r.height/2];
                         }
-                    })();
-                """)
-
-            # =========================
-            # Step 3: 等待结果
-            # =========================
-            print(f"[{name}] 等待结果...")
+                    }
+                    return null;
+                })();
+            """)
+            
+            if coords:
+                print(f"[{name}] 锁定主按钮坐标: X={int(coords[0])}, Y={int(coords[1])}")
+                os.system(f"xdotool mousemove {int(coords[0])} {int(coords[1])} click 1")
+            else:
+                print(f"[{name}] ⚠️ 严重警告：未找到主页面 Vote 按钮！")
+            
+            sb.sleep(8)
+            
+            # 阶段二：CF 盾验证与轰炸
+            print(f"[{name}] 等待验证器就绪...")
+            for _ in range(10):
+                if sb.execute_script("return typeof turnstile !== 'undefined'"):
+                    break
+                time.sleep(2)
+            
+            print(f"[{name}] 执行物理矩阵轰炸 (等待CF绿勾)...")
+            for y in [540, 560, 580]:
+                for x in [810, 830, 850]:
+                    os.system(f"xdotool mousemove {x} {y} click 1")
+                    time.sleep(0.2)
+            
+            sb.sleep(12) 
+            
+            # 阶段三：确认按钮雷达
+            conf = sb.execute_script("""
+                return (function() {
+                    const els = document.querySelectorAll('button, div, span');
+                    for (let e of els) {
+                        let txt = (e.innerText || '').toUpperCase();
+                        if (txt.includes('ADDS 90')) {
+                            const r = e.getBoundingClientRect();
+                            return [r.left + r.width/2, r.top + r.height/2];
+                        }
+                    }
+                    return null;
+                })();
+            """)
+            
+            if conf:
+                print(f"[{name}] 锁定弹窗确认按钮坐标: X={int(conf[0])}, Y={int(conf[1])}")
+                os.system(f"xdotool mousemove {int(conf[0])} {int(conf[1])} click 1")
+            else:
+                print(f"[{name}] ⚠️ 严重警告：未找到弹窗中的最终确认按钮！")
+            
+            # 阶段四：死守倒计时刷新
+            print(f"[{name}] 监控提交结果，等待倒计时刷新...")
             success = False
-
-            for _ in range(25):
-                text = sb.get_text("body").lower()
-
-                if ("+90" in text or "wait" in text or "voted" in text):
+            for i in range(40):
+                text = sb.get_text("body")
+                new_time = extract_time(text)
+                
+                # 如果时间发生了变化，且不是空值，说明真正续上了！
+                if new_time and old_time and new_time != old_time:
+                    print(f"[{name}] 🎉 倒计时已刷新: {old_time} -> {new_time}")
                     success = True
                     break
-
                 time.sleep(1)
-
-            # =========================
-            # 截图
-            # =========================
-            path = f"{SCREENSHOT_DIR}/{name}_final.png"
-            sb.save_screenshot(path)
-
-            return {
-                "name": name,
-                "status": "✅ 成功" if success else "⚠️ 未确认",
-                "screenshot": path
-            }
+            
+            sb.save_screenshot(f"screenshots/{name}_final.png")
+            
+            if success:
+                return f"✅ 续期成功 (新时间: {new_time})"
+            else:
+                return "❌ 续期失败 (时间未变化)"
 
     except Exception as e:
-        return {
-            "name": name,
-            "status": f"❌ 崩溃: {e}",
-            "screenshot": ""
-        }
-
-
-# =========================
-# MAIN
-# =========================
-def main():
-    print("===== v5 稳定守护版 启动 =====")
-
-    results = []
-    for t in TARGETS:
-        r = run_task(t)
-        results.append(r)
-
-    msg = ["🤖 G4F 续期报告"]
-    for r in results:
-        msg.append("-------------------")
-        msg.append(f"节点: {r['name']}")
-        msg.append(f"状态: {r['status']}")
-        msg.append(f"截图: {r['screenshot']}")
-
-    tg("\n".join(msg))
-    print("\n".join(msg))
-
+        import traceback
+        traceback.print_exc()
+        return f"❌ 崩溃: {e}"
 
 if __name__ == "__main__":
-    main()
+    os.makedirs("screenshots", exist_ok=True)
+    results = []
+    for t in TARGETS:
+        res = run_task(t)
+        results.append({"name": t["name"], "status": res})
+
+    tg_msg = "🤖 G4F 自动续期汇报\n" + "\n".join([f"{r['name']}: {r['status']}" for r in results])
+    tg(tg_msg)
+    print(tg_msg)
