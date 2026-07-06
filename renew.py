@@ -1,146 +1,263 @@
-import os, sys, time, urllib.request, json, re
+import os, time, json, re, urllib.request
 from seleniumbase import SB
 
-# ==========================================
-# 💡 G4F.GG 自动续期 (全局变量防报错终极版)
-# ==========================================
+# =========================
+# CONFIG
+# =========================
 TARGETS = [
     {"name": "nidaye", "url": "https://g4f.gg/nidaye"}
 ]
 
+PROXY = "socks5://127.0.0.1:40000"
+
 TG_TOKEN = os.getenv("TG_TOKEN", "")
 TG_CHAT = os.getenv("TG_CHAT_ID", "")
 
-def send_unified_tg(results):
-    if TG_TOKEN and TG_CHAT:
-        try:
-            # 构建统一的消息面板
-            lines = ["🤖 G4F 续期综合汇报"]
-            for res in results:
-                lines.append("-----------------------")
-                lines.append(f"节点: {res['name']}")
-                lines.append(f"状态: {res['status']}")
-                lines.append(f"剩余时间: {res['time']}")
-            
-            msg = "\n".join(lines)
-            url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
-            data = json.dumps({"chat_id": TG_CHAT, "text": msg}).encode('utf-8')
-            req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'})
-            urllib.request.urlopen(req, timeout=10)
-            print("Telegram 综合通知发送成功。")
-        except Exception as e:
-            print(f"发送通知失败: {e}")
+# 记忆存储文件
+TIME_RECORD_FILE = "g4f_times.json"
 
-print("\n===== 开始执行 G4F 自动续期 =====")
-
-proxy_str = "socks5://127.0.0.1:40000"
-task_results = []
-
-print("初始化物理鼠标依赖...")
-os.system("sudo apt-get update > /dev/null 2>&1")
-os.system("sudo apt-get install -y xdotool > /dev/null 2>&1")
-
-for target in TARGETS:
-    name = target["name"]
-    url = target["url"]
-    print(f"\n开始处理节点: [{name}]")
-    
+# =========================
+# Telegram
+# =========================
+def tg(msg):
+    if not TG_TOKEN or not TG_CHAT:
+        return
     try:
-        # 确保每次循环都开启一个全新的、未被拦截的纯净浏览器进程
-        with SB(uc=True, proxy=proxy_str, headless=False, window_size="1920,1080") as sb:
-            print(f"正在访问目标网址: {url}")
-            sb.driver.set_window_position(0, 0)
-            sb.open(url)
-            sb.sleep(6) 
-            
-            os.makedirs("screenshots", exist_ok=True)
-            sb.save_screenshot(f"screenshots/{name}_1_page_loaded.png")
+        url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
+        data = json.dumps({"chat_id": TG_CHAT, "text": msg}).encode()
+        req = urllib.request.Request(url, data, {"Content-Type": "application/json"})
+        urllib.request.urlopen(req, timeout=10)
+    except:
+        pass
 
-            # -----------------------------------------------------
-            # 🚀 核心连招：雷达扫描 -> 物理破盾 -> 绝杀确认
-            # -----------------------------------------------------
-            print("【第一阶段】雷达扫描按钮坐标并执行纯物理点击...")
-            
-            # 核心修复：完全弃用 return，将坐标存入 window.myTargetCoords
-            js_get_coords = """
-            window.myTargetCoords = null;
-            let els = document.querySelectorAll('button, a, div, span');
-            for (let i = els.length - 1; i >= 0; i--) {
-                let text = (els[i].innerText || '').toUpperCase().replace(/\\s+/g, ' ');
-                if (text.includes('ADD 90 MIN') || text.includes('+ VOTE +')) {
-                    let rect = els[i].getBoundingClientRect();
-                    window.myTargetCoords = [rect.x + rect.width/2, rect.y + rect.height/2];
+# =========================
+# 时间记忆管理 (持久化)
+# =========================
+def load_old_times():
+    if os.path.exists(TIME_RECORD_FILE):
+        try:
+            with open(TIME_RECORD_FILE, 'r') as f:
+                return json.load(f)
+        except:
+            pass
+    return {}
+
+def save_new_times(times_dict):
+    try:
+        with open(TIME_RECORD_FILE, 'w') as f:
+            json.dump(times_dict, f)
+    except:
+        pass
+
+# =========================
+# Cloudflare / Turnstile检测
+# =========================
+def has_challenge(sb):
+    html = sb.get_page_source().lower()
+    return ("turnstile" in html or "verify" in html or "challenge" in html)
+
+# =========================
+# JS雷达：找主页面按钮坐标
+# =========================
+def scan_main_btn(sb):
+    return sb.execute_script("""
+        window._target1 = null;
+        const els = [...document.querySelectorAll('button,a,div,span')];
+        for (let el of els.reverse()) {
+            const t = (el.innerText || '').toUpperCase().replace(/\\s+/g,' ');
+            if (t.includes('ADD 90') || t.includes('+ VOTE +')) {
+                const r = el.getBoundingClientRect();
+                if (r.width > 0 && r.height > 0) {
+                    window._target1 = { x: Math.floor(r.left + r.width/2), y: Math.floor(r.top + r.height/2) };
                     break;
                 }
             }
-            """
-            sb.execute_script(js_get_coords)
-            
-            # 使用单行安全代码提取坐标，绝不报错
-            coords = sb.execute_script("return window.myTargetCoords;")
-            
-            if coords:
-                click_x, click_y = int(coords[0]), int(coords[1])
-                print(f"雷达锁定目标！坐标: X={click_x}, Y={click_y}")
-                # 调动系统物理鼠标进行双击，确保点透
-                os.system(f"xdotool mousemove {click_x} {click_y} click 1")
-                time.sleep(0.5)
-                os.system(f"xdotool mousemove {click_x} {click_y} click 1")
-            else:
-                print("⚠️ 雷达未能扫到按钮，尝试使用 Selenium 原生强点...")
-                try:
-                    sb.click('xpath=//*[contains(translate(., "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"), "add 90")]', timeout=3)
-                except:
-                    pass
-            
-            print("等待弹窗居中加载...")
-            time.sleep(4) 
-            
-            print("【第二阶段】执行物理破盾与黄金坐标补刀...")
-            os.system("xdotool mousemove 960 540 click 1")
-            time.sleep(1)
-            os.system("xdotool mousemove 945 641 click 1")
-            time.sleep(6)
-            
-            print("【第三阶段】点击弹窗内部的最终确认按钮...")
-            js_click_phase2 = """
-            let els2 = document.querySelectorAll('button, a, div, span');
-            for (let i = els2.length - 1; i >= 0; i--) {
-                let text = (els2[i].innerText || '').toUpperCase();
-                if (text.includes('ADDS 90 MINUTES') || text.includes('VOTE - ADDS')) {
-                    els2[i].click();
+        }
+        return window._target1;
+    """)
+
+# =========================
+# JS雷达：找弹窗内确认按钮坐标
+# =========================
+def scan_confirm_btn(sb):
+    return sb.execute_script("""
+        window._target2 = null;
+        const els = [...document.querySelectorAll('button,a,div,span')];
+        for (let el of els.reverse()) {
+            const t = (el.innerText || '').toUpperCase().replace(/\\s+/g,' ');
+            if (t.includes('ADDS 90 MINUTES') || t.includes('VOTE - ADDS')) {
+                const r = el.getBoundingClientRect();
+                if (r.width > 0 && r.height > 0) {
+                    window._target2 = { x: Math.floor(r.left + r.width/2), y: Math.floor(r.top + r.height/2) };
+                    break;
                 }
             }
-            """
-            sb.execute_script(js_click_phase2)
+        }
+        return window._target2;
+    """)
 
-            print("绝杀完成，等待广告时间与最终结算文本...")
-            time.sleep(25)
-            # -----------------------------------------------------
+# =========================
+# 成功判断（适配最新改版UI）
+# =========================
+def judge(sb, old_time):
+    text = sb.get_text("body").lower()
+    
+    # 提取时间
+    m = re.search(r'\d{2}:\d{2}:\d{2}', text)
+    now_time = m.group(0) if m else ""
 
-            print("获取页面剩余时间...")
-            page_text = sb.get_text("body")
-            time_match = re.search(r'\d{2}:\d{2}:\d{2}', page_text)
-            remaining_time = time_match.group(0) if time_match else "未知"
-            print(f"提取到时间: {remaining_time}")
-                
-            page_text_lower = page_text.lower()
-            if "90 minutes added" in page_text_lower or "extended this server recently" in page_text_lower:
-                status = "✅ 续期成功"
+    # 1. 时间发生变动判定
+    changed = (now_time != "") and (now_time != old_time)
+    
+    # 2. 结合手动截图的新版关键词判定
+    # 寻找按钮变成 "wait 5 min" 或列表中出现 "+90m"
+    keywords = ["wait 5 min", "wait 4 min", "+90m", "90 minutes added", "extended this server recently"]
+    hit = any(k in text for k in keywords)
+
+    if hit:
+        status = "✅ 成功 (特征文字命中)"
+    elif changed:
+        status = "✅ 成功 (倒计时已刷新)"
+    else:
+        status = "⚠️ 状态未知"
+
+    return status, now_time
+
+# =========================
+# 单节点执行
+# =========================
+def run_node(t, old_time):
+    name = t["name"]
+    url = t["url"]
+    
+    try:
+        with SB(
+            uc=True,
+            headless=False,
+            proxy=PROXY,
+            window_size="1920,1080"
+        ) as sb:
+            print(f"[{name}] 打开页面")
+            sb.open(url)
+            sb.sleep(6)
+
+            if has_challenge(sb):
+                print("⚠️ 检测到初始验证页面")
+
+            # =====================
+            # 第一阶段：主页按钮雷达 + 物理狙击
+            # =====================
+            coords1 = scan_main_btn(sb)
+            if coords1:
+                cx, cy = coords1['x'], coords1['y']
+                print(f"[{name}] 雷达锁定主按钮: X={cx}, Y={cy}")
+                os.system(f"xdotool mousemove {cx} {cy} click 1")
+                time.sleep(0.5)
+                os.system(f"xdotool mousemove {cx} {cy} click 1") # 双击确保穿透
             else:
-                status = "⚠️ 状态未知"
-
-            try:
-                sb.save_screenshot(f"screenshots/{name}_2_result.png")
-            except:
-                pass
+                print(f"[{name}] ⚠️ 主按钮雷达未命中，可能页面未加载完全")
             
-            # 记录当前节点的成功状态
-            task_results.append({"name": name, "status": status, "time": remaining_time})
+            print(f"[{name}] 等待弹窗加载...")
+            sb.sleep(4)
+
+            # =====================
+            # 第二阶段：弹窗CF验证物理矩阵轰炸
+            # =====================
+            print(f"[{name}] 启动 CF 验证框物理矩阵轰炸 (无视跨域护盾)...")
+            # 在 1920x1080 分辨率下，对弹窗偏左侧的 CF 勾选区域进行密集扫射
+            xs = [810, 830, 850, 870]
+            ys = [530, 550, 570, 590]
+            
+            for y in ys:
+                for x in xs:
+                    # 模拟真实人类的鼠标移动轨迹并点击
+                    os.system(f"xdotool mousemove {x} {y} click 1")
+                    time.sleep(0.08) # 微小延迟，防止点击过快被判定为机器
+            
+            print(f"[{name}] 轰炸完毕，等待 CF 验证通过...")
+            sb.sleep(8) # 留出足够的时间让盾牌转圈和打绿勾
+
+            # =====================
+            # 第三阶段：弹窗确认按钮雷达 + 物理狙击
+            # =====================
+            coords2 = scan_confirm_btn(sb)
+            if coords2:
+                cx2, cy2 = coords2['x'], coords2['y']
+                print(f"[{name}] 雷达锁定弹窗确认按钮: X={cx2}, Y={cy2}")
+                os.system(f"xdotool mousemove {cx2} {cy2} click 1")
+            else:
+                print(f"[{name}] ⚠️ 弹窗按钮雷达未命中，尝试 JS 强点兜底...")
+                sb.execute_script("""
+                    const els = [...document.querySelectorAll('button,a,div,span')];
+                    for (let el of els.reverse()) {
+                        const t = (el.innerText || '').toUpperCase();
+                        if (t.includes('ADDS 90') || t.includes('VOTE - ADDS')) el.click();
+                    }
+                """)
+
+            print(f"[{name}] 点击完成，等待 25 秒网络提交与状态刷新...")
+            sb.sleep(25)
+
+            # =====================
+            # 判断结果与截图
+            # =====================
+            status, ttime = judge(sb, old_time)
+            
+            os.makedirs("screenshots", exist_ok=True)
+            sb.save_screenshot(f"screenshots/{name}_final.png")
+
+            return {
+                "name": name,
+                "status": status,
+                "time": ttime
+            }
 
     except Exception as e:
-        print(f"节点 [{name}] 执行过程中发生异常: {e}")
-        task_results.append({"name": name, "status": "❌ 执行失败", "time": "未知"})
+        return {
+            "name": name,
+            "status": f"❌ 崩溃: {e}",
+            "time": "未知"
+        }
 
-print("\n所有节点处理完毕，正在统一发送综合汇报...")
-send_unified_tg(task_results)
+# =========================
+# 主程序
+# =========================
+def main():
+    print("===== v3 矩阵轰炸裁决版 启动 =====")
+    
+    # 提前安装 xdotool
+    os.system("sudo apt-get update > /dev/null 2>&1")
+    os.system("sudo apt-get install -y xdotool > /dev/null 2>&1")
+
+    # 读取过去的记录
+    history_times = load_old_times()
+    results = []
+
+    for t in TARGETS:
+        node_name = t["name"]
+        old_time = history_times.get(node_name, "")
+        
+        r = run_node(t, old_time)
+        results.append(r)
+        
+        # 更新记忆中的时间
+        if r["time"] and r["time"] != "未知":
+            history_times[node_name] = r["time"]
+
+    # 循环结束后，统一保存最新的时间记录
+    save_new_times(history_times)
+
+    # 汇报组装
+    msg = ["🤖 v3 自动续期终极报告"]
+    for r in results:
+        msg.append("-------------------")
+        msg.append(f"节点: {r['name']}")
+        msg.append(f"状态: {r['status']}")
+        msg.append(f"时间: {r['time']}")
+
+    report_text = "\n".join(msg)
+    tg(report_text)
+    print("\n" + report_text)
+
+if __name__ == "__main__":
+    main()
