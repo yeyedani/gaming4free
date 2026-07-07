@@ -2,7 +2,7 @@ import os, time, urllib.request, json, re
 from seleniumbase import SB
 
 # ==========================================
-# 💡 G4F.GG 自动续期 (DOM 级精准绝杀版)
+# 💡 G4F.GG 自动续期 (V22 流水账交叉验证版)
 # ==========================================
 TARGETS = [
     {"name": "nidaye", "url": "https://gaming4free.net/servers/nidaye"}
@@ -10,6 +10,16 @@ TARGETS = [
 
 TG_TOKEN = os.getenv("TG_TOKEN", "")
 TG_CHAT = os.getenv("TG_CHAT_ID", "")
+
+# 时间转秒数辅助函数
+def time_to_seconds(t_str):
+    try:
+        parts = t_str.strip().split(':')
+        if len(parts) == 3:
+            return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+        return 0
+    except:
+        return 0
 
 def send_unified_tg(results):
     if not (TG_TOKEN and TG_CHAT): return
@@ -43,9 +53,8 @@ for target in TARGETS:
     status = "❌ 执行异常"
     
     for attempt in range(max_retries):
-        print(f"-> 正在进行第 {attempt + 1} 次尝试...")
+        print(f"\n-> 正在进行第 {attempt + 1} 次尝试...")
         try:
-            # 启用 uc_cdp=True 以获得最强 Cloudflare 绕过能力
             with SB(uc=True, uc_cdp=True, proxy=proxy_str, headless=False, window_size="1920,1080", browser="chrome") as sb:
                 print(f"正在访问目标网址: {url}")
                 sb.open(url)
@@ -54,59 +63,110 @@ for target in TARGETS:
                 os.makedirs("screenshots", exist_ok=True)
                 sb.save_screenshot(f"screenshots/{name}_1_page_loaded.png")
 
-                # --- 步骤 1：精确触发主按钮 ---
+                # --- 步骤 0：记录初始时间与状态 ---
+                btn_state = sb.execute_script("""
+                    const btn = document.getElementById('sd-vote-btn');
+                    if (!btn) return 'NOT_FOUND';
+                    const txt = btn.innerText.toUpperCase();
+                    if (txt.includes('WAIT')) return 'COOLDOWN';
+                    if (txt.includes('VOTED')) return 'ALREADY_VOTED';
+                    return 'READY';
+                """)
+                if btn_state == 'COOLDOWN':
+                    status, found_time = "⏳ 冷却中 (未到时间)", "不适用"
+                    print("🛑 节点处于冷却期，跳过执行。")
+                    break
+                elif btn_state == 'ALREADY_VOTED':
+                    status, found_time = "✅ 刚刚已投票", "不适用"
+                    print("✅ 节点显示已投票，跳过执行。")
+                    break
+
+                initial_time_str = sb.execute_script("return document.getElementById('sd-timer') ? document.getElementById('sd-timer').innerText.trim() : '00:00:00';")
+                initial_sec = time_to_seconds(initial_time_str)
+                print(f"0. 记录投票前初始时间: {initial_time_str} ({initial_sec} 秒)")
+
+                # --- 步骤 1：触发主按钮 ---
                 print("1. 触发主页续期按钮 (#sd-vote-btn)...")
                 sb.execute_script("document.getElementById('sd-vote-btn') && document.getElementById('sd-vote-btn').click();")
-                sb.sleep(5)
 
-                # --- 步骤 2：智能等盾 ---
-                print("2. 监听 Cloudflare 验证状态...")
-                for _ in range(20):
-                    # 严谨校验：确保 vm-submit 存在，且 disabled 属性已被 CF 移除
-                    is_ready = sb.execute_script("return document.getElementById('vm-submit') !== null && document.getElementById('vm-submit').disabled === false;")
-                    if is_ready:
-                        print("-> CF 验证已通过，按钮锁已解开！")
+                # --- 步骤 2：扛过广告，等弹窗 ---
+                print("2. 等待广告结束及投票弹窗加载 (最长 45 秒)...")
+                try:
+                    sb.wait_for_element_visible('#vm-submit', timeout=45)
+                except:
+                    raise Exception("未能等出投票弹窗，可能被广告卡死。")
+
+                # --- 步骤 3：动态获取坐标，物理激活验证盾 ---
+                print("3. 监听 Cloudflare 验证状态...")
+                cf_passed = False
+                for i in range(25):
+                    is_unlocked = sb.execute_script("return document.getElementById('vm-submit') !== null && document.getElementById('vm-submit').disabled === false;")
+                    if is_unlocked:
+                        print("   -> CF 验证成功，确认按钮自然解锁！")
+                        cf_passed = True
                         break
+                    
+                    if i > 0 and i % 5 == 0:
+                        cf_rect = sb.execute_script("""
+                            let ts = document.querySelector('div.cf-turnstile iframe');
+                            if (ts) {
+                                let rect = ts.getBoundingClientRect();
+                                return {x: rect.left + rect.width/2, y: rect.top + rect.height/2};
+                            }
+                            return null;
+                        """)
+                        if cf_rect:
+                            base_x, base_y = int(cf_rect['x']), int(cf_rect['y'])
+                            print(f"   -> 探测到验证盾动态坐标 (X={base_x}, Y={base_y})，辅助激活...")
+                            for offset_y in [75, 90, 105]:
+                                for offset_x in [-15, 0, 15]:
+                                    os.system(f"xdotool mousemove {base_x + offset_x} {base_y + offset_y} click 1")
+                                    time.sleep(0.05)
                     time.sleep(1)
 
-                # --- 步骤 3：底层穿透提交 ---
-                print("3. 执行 DOM 级强制提交 (#vm-submit)...")
-                sb.execute_script("""
-                    {
-                        let submitBtn = document.getElementById('vm-submit');
-                        if (submitBtn) {
-                            submitBtn.disabled = false; // 强行开锁，双重保险
-                            submitBtn.click();
-                        }
-                    }
-                """)
-                
-                # --- 步骤 4：即时回执校验 (利用截图里的 #vm-msg) ---
-                print("等待 10 秒 API 响应...")
-                sb.sleep(10)
-                msg_text = sb.execute_script("return document.getElementById('vm-msg') ? document.getElementById('vm-msg').innerText : '';")
-                print(f"弹窗底层反馈: {msg_text}")
+                if not cf_passed:
+                    raise Exception("Cloudflare 验证盾未能解开，无法获取安全 Token。")
 
-                # --- 步骤 5：刷新页面，提取最终时钟 ---
-                print("4. 刷新页面，提取最终剩余时间 (#sd-timer)...")
-                sb.refresh_page()
-                sb.sleep(8)
+                # --- 步骤 4：合法提交 ---
+                print("4. 执行合法提交 (#vm-submit)...")
+                sb.execute_script("document.getElementById('vm-submit').click();")
                 
-                try:
-                    # 极其精确地提取时间文本
-                    found_time = sb.execute_script("return document.getElementById('sd-timer') ? document.getElementById('sd-timer').innerText.trim() : '未知';")
-                    print(f"精确提取到倒计时: {found_time}")
-                    
-                    if found_time and found_time != '未知' and re.search(r'\d', found_time):
-                        status = "✅ 续期成功"
-                    else:
-                        page_text = sb.get_text("body").upper()
-                        if "VOTED" in page_text or "90 MIN" in page_text:
-                            status = "✅ 续期成功 (基于全局文本判定)"
-                        else:
-                            status = "❌ 续期失败"
-                except Exception as e:
-                    print(f"提取计时器失败: {e}")
+                print("等待 API 反馈...")
+                api_msg = ""
+                for _ in range(15):
+                    api_msg = sb.execute_script("return document.getElementById('vm-msg') ? document.getElementById('vm-msg').innerText.trim() : '';")
+                    if api_msg and "submitting" not in api_msg.lower():
+                        break
+                    time.sleep(1)
+                print(f"   -> 底层弹窗反馈: {api_msg}")
+
+                # --- 步骤 5：【核心】双重交叉校验（时间差 + 投票流水账） ---
+                print("5. 强制刷新页面，执行双重交叉校验...")
+                sb.refresh_page()
+                sb.sleep(10)
+                
+                # 校验点 A：获取时钟
+                new_time_str = sb.execute_script("return document.getElementById('sd-timer') ? document.getElementById('sd-timer').innerText.trim() : '00:00:00';")
+                new_sec = time_to_seconds(new_time_str)
+                time_diff = new_sec - initial_sec
+                found_time = new_time_str
+                
+                # 校验点 B：嗅探最新投票记录
+                recent_vote = sb.execute_script("""
+                    let el = document.querySelector('.sp-vote-row .sp-vote-time');
+                    return el ? el.innerText.trim().toLowerCase() : '';
+                """)
+                print(f"   -> 刷新后最新时间: {new_time_str} (差值: {time_diff} 秒)")
+                print(f"   -> 最新投票流水账: {recent_vote}")
+
+                # 判定逻辑：时间大涨 OR 最新流水账显示刚才有投票
+                is_time_increased = time_diff > 3000
+                is_just_voted = any(x in recent_vote for x in ['sec', 'just', '0m', '1m', '2m'])
+
+                if is_time_increased or is_just_voted:
+                    status = "✅ 续期成功 (校验通过)"
+                else:
+                    status = f"❌ 续期失败 (流水账: {recent_vote})"
 
                 print(f"当前节点最终结果: 状态={status}, 剩余时间={found_time}")
                 try:
@@ -114,7 +174,7 @@ for target in TARGETS:
                 except:
                     pass
                 
-                if "成功" in status:
+                if "✅" in status:
                     break 
 
         except Exception as e:
