@@ -1,11 +1,11 @@
-import os, sys, time, urllib.request, json, re
+import os, time, urllib.request, json, re
 from seleniumbase import SB
 
 # ==========================================
-# 💡 G4F.GG 自动续期
+# 💡 G4F.GG 自动续期 (V19 逻辑穿透版)
 # ==========================================
 TARGETS = [
-    {"name": "nidaye", "url": "https://g4f.gg/nidaye"}
+    {"name": "nidaye", "url": "https://gaming4free.net/servers/nidaye"}
 ]
 
 TG_TOKEN = os.getenv("TG_TOKEN", "")
@@ -32,121 +32,102 @@ def send_unified_tg(results):
 print("\n===== 开始执行 =====")
 
 proxy_str = "socks5://127.0.0.1:40000"
-
 task_results = []
-print("初始化物理鼠标依赖...")
-os.system("sudo apt-get update > /dev/null 2>&1")
-os.system("sudo apt-get install -y xdotool > /dev/null 2>&1")
 
 for target in TARGETS:
     name = target["name"]
     url = target["url"]
     print(f"\n开始处理节点: [{name}]")
+    
     max_retries = 3
     for attempt in range(max_retries):
         try:
-            with SB(uc=True, proxy=proxy_str, headless=False, window_size="1920,1080", browser="chrome") as sb:
+            # 开启 uc_cdp=True，这是对抗 Cloudflare 的终极利器
+            with SB(uc=True, uc_cdp=True, proxy=proxy_str, headless=False, window_size="1920,1080", browser="chrome") as sb:
                 print(f"正在访问目标网址: {url}")
-                sb.driver.set_window_position(0, 0)
                 sb.open(url)
-                sb.sleep(6)
+                sb.sleep(8)
                 os.makedirs("screenshots", exist_ok=True)
                 sb.save_screenshot(f"screenshots/{name}_1_page_loaded.png")
 
-                print("点击续期按钮 (#vm-submit)...")
-                try:
-                    sb.click('#vm-submit', timeout=5)
-                    print("续期按钮点击成功")
-                except Exception as e:
-                    print(f"续期按钮点击失败: {e}")
-                    # 尝试 JS 点击
-                    sb.execute_script("document.getElementById('vm-submit').click()")
+                # --- 步骤 1：点击主界面的初始按钮 ---
+                print("1. 点击初始续期按钮 (#sd-vote-btn)...")
+                sb.execute_script("""
+                    const btn = document.getElementById('sd-vote-btn');
+                    if(btn) btn.click();
+                """)
+                sb.sleep(5)
 
-                print("等待人机验证加载...")
-                time.sleep(6)
+                # --- 步骤 2：智能等待 CF 验证盾通过 ---
+                print("2. 等待人机验证处理...")
+                for _ in range(15):
+                    # 检查确认按钮是否已经被 CF 解锁
+                    is_unlocked = sb.execute_script("""
+                        const submitBtn = document.getElementById('vm-submit');
+                        return submitBtn && submitBtn.disabled === false;
+                    """)
+                    if is_unlocked:
+                        print("验证已通过，按钮已解锁！")
+                        break
+                    time.sleep(1)
 
-                print("执行验证框区域点击 (4x4 网格)...")
-                xs = [790, 810, 830, 850]
-                ys = [540, 560, 580, 600]
-                for y in ys:
-                    for x in xs:
-                        os.system(f"xdotool mousemove {x} {y} click 1")
-                        time.sleep(0.1)
+                # --- 步骤 3：DOM 穿透，强行点击最终确认 ---
+                print("3. 注入提交指令 (#vm-submit)...")
+                sb.execute_script("""
+                    const submitBtn = document.getElementById('vm-submit');
+                    if (submitBtn) {
+                        submitBtn.disabled = false; // 强行解除任何可能的锁定
+                        submitBtn.click();
+                    }
+                """)
+                
+                print("等待 15 秒确保 API 提交完成...")
+                sb.sleep(15)
 
-                print("点击完成，等待验证盾亮起绿勾 (10秒)...")
-                time.sleep(10)
-
-                print("执行中心垂直扫射，确保物理击中 [VOTE] 按钮 (#sd-vote-btn)...")
-                for sweep_y in range(600, 780, 30):
-                    os.system(f"xdotool mousemove 960 {sweep_y} click 1")
-                    time.sleep(0.2)
-
-                print("等待 45 秒")
-                time.sleep(45)
-
-                print("奖励已发放，强制刷新页面")
+                # --- 步骤 4：刷新并提取最终时间 ---
+                print("4. 强制刷新页面提取最新时间...")
                 sb.refresh_page()
-                sb.sleep(10)
+                sb.sleep(8)
 
-                # 检查浏览器是否正常
-                try:
-                    _ = sb.driver.current_url
-                except Exception as e:
-                    print(f"浏览器连接已断开，尝试重新打开页面: {e}")
-                    sb.open(url)
-                    sb.sleep(10)
-
-                print("获取剩余时间 (sp-timer-box)...")
                 found_time = "未知"
                 status = "❌ 续期失败"
                 
+                # 直接通过具体的 ID 获取时间，比获取整个 div.sp-timer-box 更精确
                 try:
-                    # 尝试通过 CSS 选择器获取时间
-                    timer_box = sb.wait_for_element('div.sp-timer-box', timeout=5)
-                    found_time = timer_box.text.strip()
-                    print(f"获取到时间: {found_time}")
+                    found_time = sb.execute_script("return document.getElementById('sd-timer') ? document.getElementById('sd-timer').innerText : '未知';")
+                    print(f"精确获取到时间: {found_time}")
                     
-                    # 验证时间格式是否合理（应该包含数字）
-                    if re.search(r'\d', found_time):
+                    if found_time and found_time != '未知' and re.search(r'\d', found_time):
                         status = "✅ 续期成功"
                     else:
-                        status = "⚠️ 状态未知"
-                        
+                        # 备用方案：读取全文判断是否包含 +90m 等成功字样
+                        page_text = sb.get_text("body").upper()
+                        if "VOTED" in page_text or "90 MIN" in page_text:
+                            status = "✅ 续期成功 (基于文本模糊匹配)"
+                            
                 except Exception as e:
-                    print(f"获取 sp-timer-box 失败: {e}")
-                    # 降级方案：通过 JS 获取
-                    try:
-                        found_time = sb.execute_script("""
-                            const box = document.querySelector('div.sp-timer-box');
-                            return box ? box.textContent.trim() : '未找到';
-                        """)
-                        print(f"JS 获取到时间: {found_time}")
-                        
-                        if found_time and found_time != '未找到' and re.search(r'\d', found_time):
-                            status = "✅ 续期成功"
-                        else:
-                            status = "❌ 续期失败"
-                    except Exception as e2:
-                        print(f"JS 获取也失败: {e2}")
+                    print(f"获取时间失败: {e}")
 
                 print(f"最终结果: 状态={status}, 剩余时间={found_time}")
-
                 try:
                     sb.save_screenshot(f"screenshots/{name}_2_result.png")
                 except:
                     pass
 
                 task_results.append({"name": name, "status": status, "time": found_time})
-                break  # 成功则跳出重试循环
+                
+                # 如果成功，立刻跳出重试循环
+                if "成功" in status:
+                    break 
 
         except Exception as e:
             print(f"节点 [{name}] 第 {attempt+1} 次执行异常: {e}")
             if attempt < max_retries - 1:
-                print(f"等待 10 秒后重试...")
+                print("等待 10 秒后重试...")
                 time.sleep(10)
             else:
                 print(f"节点 [{name}] 重试次数用尽，标记为失败")
-                task_results.append({"name": name, "status": "❌ 执行失败", "time": "未知"})
+                task_results.append({"name": name, "status": "❌ 执行异常", "time": "未知"})
 
 print("\n所有节点处理完毕，正在统一发送综合汇报...")
 send_unified_tg(task_results)
