@@ -1,7 +1,6 @@
 import time
 import os
 import json
-import random
 import urllib.request
 
 # ================= 智能环境配置 =================
@@ -125,6 +124,7 @@ class Game4FreeRenewal:
                 # ================== 阶段 3：击杀广告并呼出弹窗 ==================
                 self.log("🖱️ 破坏广告环境，强开投票弹窗...")
                 sb.execute_script("window.ramp = null;")
+                time.sleep(2) # 稍微等 2 秒，让广告变量彻底死透
                 sb.execute_script("var b = document.getElementById('sd-vote-btn'); if(b) b.click();")
                 
                 try:
@@ -132,39 +132,39 @@ class Game4FreeRenewal:
                 except:
                     raise Exception("杀广告后弹窗仍未出现，请检查截图。")
 
-                # ================== 阶段 4：闭眼强袭弹窗盾 (核心修改) ==================
-                self.log("🛡️ 开始迎战弹窗 Cloudflare 验证...")
-                cf_passed = False
+                # ================== 阶段 4：V30 温柔狙击版 (核心修改) ==================
+                self.log("🛡️ 弹窗验证码已就位，开始静默等待算力验证 (10秒)...")
+                time.sleep(10) # 绝对不要急着点，给 CF 充分的时间去算数学题
                 
-                for i in range(40):
-                    # 1. 检测是否自然解锁
-                    is_unlocked = sb.execute_script("var btn=document.getElementById('vm-submit'); return btn && btn.disabled === false;")
-                    if is_unlocked:
-                        self.log("✅ Cloudflare 验证通过，拿到安全 Token！")
-                        cf_passed = True
-                        break
+                cf_passed = False
+                # 检查是否已经自然解锁
+                is_unlocked = sb.execute_script("var btn=document.getElementById('vm-submit'); return btn && btn.disabled === false;")
+                
+                if is_unlocked:
+                    self.log("✅ Cloudflare 自然验证通过，毫无察觉！")
+                    cf_passed = True
+                else:
+                    self.log("⚠️ 未自然解锁，准备执行唯一一次拟真点击...")
+                    try:
+                        # 只点一次，绝不纠缠
+                        sb.uc_click("div.cf-turnstile iframe")
+                    except:
+                        pass
                     
-                    # 2. 定期施加物理刺激 (彻底抛弃可见性检测，直接盲打)
-                    if i > 0 and i % 5 == 0:
-                        self.log("⚠️ 对弹窗盾施加底层物理刺激...")
-                        try:
-                            # 绝招 A：SeleniumBase 原生图形界面破解
-                            sb.uc_gui_click_captcha()
-                        except:
-                            pass
-                            
-                        try:
-                            # 绝招 B：强制穿透点击容器
-                            sb.uc_click('#ts-widget', timeout=1)
-                        except:
-                            pass
-                    time.sleep(1)
+                    self.log("⏳ 点击完毕，继续等待反馈 (最高 20 秒)...")
+                    for _ in range(20):
+                        is_unlocked = sb.execute_script("var btn=document.getElementById('vm-submit'); return btn && btn.disabled === false;")
+                        if is_unlocked:
+                            self.log("✅ Cloudflare 拟真点击验证通过！")
+                            cf_passed = True
+                            break
+                        time.sleep(1)
 
                 if not cf_passed:
-                    raise Exception("弹窗内 Cloudflare 验证未能解开，无法提交。")
+                    raise Exception("弹窗内 Cloudflare 盾牌彻底锁死 (极可能出现 Verification failed 红字)。")
 
                 # ================== 阶段 5：最终提交与验证 ==================
-                self.log("🖱️ 执行合法提交...")
+                self.log("🖱️ 确认锁已解开，执行合法提交...")
                 sb.click('#vm-submit')
                 
                 self.log("⏳ 等待接口反馈...")
