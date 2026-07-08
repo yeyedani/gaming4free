@@ -1,7 +1,15 @@
+import sys
 import time
 import os
 import json
 import urllib.request
+
+# ================= 修复 Windows 控制台 Emoji 编码报错 =================
+try:
+    # 强制将标准输出切换为 UTF-8，防止打印 🚀、🛡️ 等图标时崩溃
+    sys.stdout.reconfigure(encoding='utf-8')
+except Exception:
+    pass
 
 # ================= 智能环境配置 =================
 if "DISPLAY" not in os.environ:
@@ -124,7 +132,7 @@ class Game4FreeRenewal:
                 # ================== 阶段 3：击杀广告并呼出弹窗 ==================
                 self.log("🖱️ 破坏广告环境，强开投票弹窗...")
                 sb.execute_script("window.ramp = null;")
-                time.sleep(2) # 稍微等 2 秒，让广告变量彻底死透
+                time.sleep(2)
                 sb.execute_script("var b = document.getElementById('sd-vote-btn'); if(b) b.click();")
                 
                 try:
@@ -134,10 +142,9 @@ class Game4FreeRenewal:
 
                 # ================== 阶段 4：V30 温柔狙击版 (核心修改) ==================
                 self.log("🛡️ 弹窗验证码已就位，开始静默等待算力验证 (10秒)...")
-                time.sleep(10) # 绝对不要急着点，给 CF 充分的时间去算数学题
+                time.sleep(10)
                 
                 cf_passed = False
-                # 检查是否已经自然解锁
                 is_unlocked = sb.execute_script("var btn=document.getElementById('vm-submit'); return btn && btn.disabled === false;")
                 
                 if is_unlocked:
@@ -146,7 +153,6 @@ class Game4FreeRenewal:
                 else:
                     self.log("⚠️ 未自然解锁，准备执行唯一一次拟真点击...")
                     try:
-                        # 只点一次，绝不纠缠
                         sb.uc_click("div.cf-turnstile iframe")
                     except:
                         pass
@@ -161,7 +167,7 @@ class Game4FreeRenewal:
                         time.sleep(1)
 
                 if not cf_passed:
-                    raise Exception("弹窗内 Cloudflare 盾牌彻底锁死 (极可能出现 Verification failed 红字)。")
+                    raise Exception("弹窗内 Cloudflare 盾牌彻底锁死。")
 
                 # ================== 阶段 5：最终提交与验证 ==================
                 self.log("🖱️ 确认锁已解开，执行合法提交...")
