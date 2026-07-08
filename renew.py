@@ -14,9 +14,10 @@ if "XAUTHORITY" not in os.environ:
 from seleniumbase import SB
 
 # ================= 核心参数配置 =================
-PROXY_URL = "socks5://127.0.0.1:10808"
-TG_TOKEN = os.getenv("TG_TOKEN", "")
-TG_CHAT_ID = os.getenv("TG_CHAT_ID", "")
+# 【核心修改】：通过 os.getenv 动态读取您在 Secrets 中配置的 PROXY_URL
+PROXY_URL = os.getenv("PROXY_URL", "").strip()
+TG_TOKEN = os.getenv("TG_TOKEN", "").strip()
+TG_CHAT_ID = os.getenv("TG_CHAT_ID", "").strip()
 
 # 替换为您需要续期的目标
 TARGETS = [
@@ -72,27 +73,30 @@ class Game4FreeRenewal:
         self.log(f"🚀 开始处理节点 [{region}]")
         self.log("=" * 40)
 
+        # 校验代理是否存在，若不存在则为 None (不使用代理)
+        proxy_arg = PROXY_URL if PROXY_URL else None
+        if proxy_arg:
+            self.log("🌍 检测到有效代理配置，正在挂载代理节点...")
+
         with SB(
             uc=True,
             uc_cdp=True,
             headless=False,
-            chromium_arg="--no-sandbox,--disable-dev-shm-usage,--disable-gpu,--window-position=0,0,--start-maximized",
-            proxy=PROXY_URL
+            # 【核心修改】：去除了 --disable-gpu，还原真实电脑特征
+            chromium_arg="--no-sandbox,--disable-dev-shm-usage,--window-position=0,0,--start-maximized",
+            proxy=proxy_arg
         ) as sb:
             try:
                 self.log(f"📂 正在访问目标网址...")
-                # 延长重连时间，给浏览器加载 CF 判定留出空间
                 sb.uc_open_with_reconnect(URL_APP_PANEL, reconnect_time=6)
 
-                # ================== 核心修正 1：用“真手指”点开城门盾 ==================
+                # ================== 阶段 1：死等主页面 CF 盾 ==================
                 self.log("🛡️ 等待主页面彻底加载完毕...")
                 try:
-                    # 等待 15 秒，看主按钮出不出来
                     sb.wait_for_element('#sd-vote-btn', timeout=15)
                 except Exception:
-                    self.log("⚠️ 遇到入口大盾，启动浏览器底层真实鼠标模拟点击...")
+                    self.log("⚠️ 遇到入口大盾，启动底层真实鼠标模拟...")
                     try:
-                        # 调用 SB 最强的 CF 破盾专属 API (模拟物理鼠标移动并点击中心)
                         sb.uc_gui_click_captcha()
                         time.sleep(3)
                         sb.uc_gui_handle_captcha()
@@ -100,12 +104,11 @@ class Game4FreeRenewal:
                         pass
                     
                     try:
-                        # 再等 20 秒
                         sb.wait_for_element('#sd-vote-btn', timeout=20)
                     except:
                         raise Exception("主页面被 Cloudflare 彻底拦截，破盾失败。")
 
-                # ================== 获取初始时间与状态 ==================
+                # ================== 阶段 2：获取初始时间与状态 ==================
                 btn_text = sb.get_text('#sd-vote-btn').upper()
                 if 'WAIT' in btn_text:
                     self.log("🛑 节点处于冷却期，跳过执行。")
@@ -122,7 +125,7 @@ class Game4FreeRenewal:
                 initial_sec = time_to_seconds(initial_time_str)
                 self.log(f"🕒 初始真实时间: {initial_time_str} ({initial_sec} 秒)")
 
-                # ================== 击杀广告进程并呼出弹窗 ==================
+                # ================== 阶段 3：击杀广告并呼出弹窗 ==================
                 self.log("🖱️ 破坏广告环境，强开投票弹窗...")
                 sb.execute_script("window.ramp = null;")
                 sb.execute_script("var b = document.getElementById('sd-vote-btn'); if(b) b.click();")
@@ -132,7 +135,7 @@ class Game4FreeRenewal:
                 except:
                     raise Exception("杀广告后弹窗仍未出现，请检查截图。")
 
-                # ================== 核心修正 2：用“真手指”点开弹窗盾 ==================
+                # ================== 阶段 4：用“真手指”点开弹窗盾 ==================
                 self.log("🛡️ 开始迎战弹窗 Cloudflare 验证...")
                 cf_passed = False
                 
@@ -143,7 +146,6 @@ class Game4FreeRenewal:
                         cf_passed = True
                         break
                     
-                    # 使用底层的 uc_click 代替普通 click，防止被识别为机器人
                     if i > 0 and i % 6 == 0:
                         try:
                             if sb.is_element_visible("div.cf-turnstile iframe"):
@@ -156,7 +158,7 @@ class Game4FreeRenewal:
                 if not cf_passed:
                     raise Exception("弹窗内 Cloudflare 验证未能解开，无法提交。")
 
-                # ================== 最终提交与验证 ==================
+                # ================== 阶段 5：最终提交与验证 ==================
                 self.log("🖱️ 执行合法提交...")
                 sb.click('#vm-submit')
                 
@@ -171,12 +173,12 @@ class Game4FreeRenewal:
                             break
                     time.sleep(1)
 
-                self.log("⏳ 页面数据同步中...")
+                self.log("⏳ 页面数据同步中 (15秒)...")
                 time.sleep(15)
                 sb.refresh_page()
                 time.sleep(10)
 
-                # ================== 数学交叉验证 ==================
+                # ================== 阶段 6：数学交叉验证 ==================
                 timestamp_after = "00:00:00"
                 if sb.is_element_visible('#sd-timer'):
                     timestamp_after = sb.get_text('#sd-timer').strip()
@@ -217,7 +219,7 @@ class Game4FreeRenewal:
 
     def run(self):
         for target in TARGETS:
-            max_retries = 1
+            max_retries = 3
             for attempt in range(max_retries):
                 prev_len = len(self.task_results)
                 self.run_single_server(target["num"], target["region"])
