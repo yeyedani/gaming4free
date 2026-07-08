@@ -1,15 +1,25 @@
-import os, sys, time, urllib.request, json, re
+import os, sys, time, urllib.request, json, re, random
 from seleniumbase import SB
 
 # ==========================================
 # 💡 G4F.GG 自动续期
 # ==========================================
+
+# 智能虚拟桌面环境配置 (完美适配 GitHub Actions)
+if "DISPLAY" not in os.environ:
+    os.environ["DISPLAY"] = ":1"
+if "XAUTHORITY" not in os.environ:
+    if os.path.exists("/home/headless/.Xauthority"):
+        os.environ["XAUTHORITY"] = "/home/headless/.Xauthority"
+
 TARGETS = [
-    {"name": "nidaye", "url": "https://g4f.gg/nidaye"}
+   {"name": "nidaye", "url": "https://g4f.gg/nidaye"}
 ]
 
 TG_TOKEN = os.getenv("TG_TOKEN", "")
 TG_CHAT = os.getenv("TG_CHAT_ID", "")
+# 这里的端口对应你的 Sing-box 节点
+PROXY_URL = "socks5://127.0.0.1:10808"
 
 def send_unified_tg(results):
     if TG_TOKEN and TG_CHAT:
@@ -20,156 +30,120 @@ def send_unified_tg(results):
                 lines.append(f"节点: {res['name']}")
                 lines.append(f"状态: {res['status']}")
                 lines.append(f"剩余时间: {res['time']}")
+            
             msg = "\n".join(lines)
             url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
             data = json.dumps({"chat_id": TG_CHAT, "text": msg}).encode('utf-8')
             req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'})
             urllib.request.urlopen(req, timeout=10)
-            print("Telegram 综合通知发送成功。")
+            print("✅ Telegram 综合通知发送成功。")
         except Exception as e:
-            print(f"发送通知失败: {e}")
+            print(f"❌ 发送通知失败: {e}")
 
-print("\n===== 开始执行 =====")
+def get_remaining_time(sb):
+    """通过官方专属 ID 获取精准时间"""
+    try:
+        sb.wait_for_element_visible('#sd-timer', timeout=15)
+        time.sleep(1)
+        return sb.get_text('#sd-timer').strip()
+    except:
+        try:
+            return sb.execute_script("let el = document.querySelector('#sd-timer'); return el ? el.innerText.trim() : '未知';")
+        except:
+            return "未知"
 
-proxy_str = "socks5://127.0.0.1:40000"
-
+print("\n===== 🚀 开始执行极速续期 =====")
 task_results = []
-print("初始化物理鼠标依赖...")
-os.system("sudo apt-get update > /dev/null 2>&1")
-os.system("sudo apt-get install -y xdotool > /dev/null 2>&1")
+os.makedirs("screenshots", exist_ok=True)
 
 for target in TARGETS:
     name = target["name"]
     url = target["url"]
-    print(f"\n开始处理节点: [{name}]")
-    max_retries = 3
-    for attempt in range(max_retries):
-        try:
-            with SB(uc=True, proxy=proxy_str, headless=False, window_size="1920,1080", browser="chrome") as sb:
-                print(f"正在访问目标网址: {url}")
-                sb.driver.set_window_position(0, 0)
-                sb.open(url)
-                sb.sleep(6)
-                os.makedirs("screenshots", exist_ok=True)
-                sb.save_screenshot(f"screenshots/{name}_1_page_loaded.png")
+    print(f"\n[{name}] 开始处理节点...")
+    
+    try:
+        # 🌟 核心参数升级：采用与成功脚本完全一致的隐身启动参数
+        with SB(
+            uc=True, 
+            test=True, 
+            headed=True, 
+            headless=False, 
+            xvfb=False, 
+            chromium_arg="--no-sandbox,--disable-dev-shm-usage,--disable-gpu,--window-position=0,0,--start-maximized",
+            proxy=PROXY_URL
+        ) as sb:
+            
+            print(f"[{name}] 正在访问目标网址...")
+            sb.uc_open_with_reconnect(url, reconnect_time=5)
+            time.sleep(random.uniform(6, 10))
+            sb.save_screenshot(f"screenshots/{name}_1_loaded.png")
 
-                print("点击续期按钮 (#vm-submit)...")
+            # 提取续期前时间 (仅作记录)
+            time_before = get_remaining_time(sb)
+            print(f"[{name}] 当前剩余时间: {time_before}")
+
+            # 1. 点击初始续期按钮 (使用官方 ID)
+            print(f"[{name}] 正在点击初始 [+ ADD 90 MIN] 按钮...")
+            try:
+                sb.wait_for_element_visible("#sd-vote-btn", timeout=10)
+                sb.click('#sd-vote-btn')
+            except Exception as e:
+                print(f"[{name}] ⚠️ 未找到初始按钮，可能需要先关闭 Cookie 弹窗...")
+                # 尝试点击任何包含 Cookie/同意 的按钮
+                cookie_btns = ['//button[contains(., "Recommended")]', '//button[contains(., "Accept")]', '//button[contains(., "Consent")]']
+                for btn in cookie_btns:
+                    if sb.is_element_present(btn):
+                        try: sb.click(btn); time.sleep(2)
+                        except: pass
+                sb.click('#sd-vote-btn')
+
+            time.sleep(random.uniform(6, 10))
+
+            # 2. 🌟 核心杀手锏：接管 Cloudflare 人机验证
+            print(f"[{name}] 开始迎战 Cloudflare 人机验证盾...")
+            cf_indicators = ["verify you are human", "确认您是真人", "troubleshoot", "just a moment"]
+            cf_passed = False
+            
+            for i in range(10): # 循环监听破盾情况
                 try:
-                    sb.click('#vm-submit', timeout=5)
-                    print("续期按钮点击成功")
-                except Exception as e:
-                    print(f"续期按钮点击失败: {e}")
-                    # 尝试 JS 点击
-                    sb.execute_script("document.getElementById('vm-submit').click()")
-
-                print("等待人机验证加载...")
-                time.sleep(6)
-
-                print("执行验证框区域点击 (4x4 网格)...")
-                xs = [790, 810, 830, 850]
-                ys = [540, 560, 580, 600]
-                for y in ys:
-                    for x in xs:
-                        os.system(f"xdotool mousemove {x} {y} click 1")
-                        time.sleep(0.1)
-
-                print("点击完成，等待验证盾亮起绿勾 (10秒)...")
-                time.sleep(10)
-
-                print("执行中心垂直扫射，确保物理击中 [VOTE] 按钮 (#sd-vote-btn)...")
-                for sweep_y in range(600, 780, 30):
-                    os.system(f"xdotool mousemove 960 {sweep_y} click 1")
-                    time.sleep(0.2)
-
-                print("等待 45 秒")
-                time.sleep(45)
-
-                print("奖励已发放，强制刷新页面")
-                sb.refresh_page()
-                sb.sleep(10)
-
-                # 检查浏览器是否正常
-                try:
-                    _ = sb.driver.current_url
-                except Exception as e:
-                    print(f"浏览器连接已断开，尝试重新打开页面: {e}")
-                    sb.open(url)
-                    sb.sleep(10)
-
-                print("获取页面完整 HTML 内容...")
-                page_html = sb.driver.page_source
-                
-                # 打印前 500 个字符用于调试
-                print(f"页面内容开头: {page_html[:500]}")
-                
-                # 尝试匹配多种时间格式
-                time_patterns = [
-                    r'(\d{2}:\d{2}:\d{2})',
-                    r'(\d+)\s*天\s*(\d+)\s*时',
-                    r'(\d+)\s*小时',
-                    r'(\d+)\s*分钟',
-                ]
-                
-                found_time = "未知"
-                found_status = False
-                
-                for pattern in time_patterns:
-                    match = re.search(pattern, page_html)
-                    if match:
-                        found_time = match.group(0)
-                        found_status = True
-                        print(f"匹配到时间模式 [{pattern}]: {found_time}")
+                    sb.uc_gui_click_captcha()
+                    time.sleep(3)
+                    page_lower = sb.get_page_source().lower()
+                    if any(x in page_lower for x in cf_indicators):
+                        sb.uc_gui_handle_captcha() # 调用神级内置破盾
+                        time.sleep(3)
+                        page_lower = sb.get_page_source().lower()
+                    if not any(x in page_lower for x in cf_indicators):
+                        print(f"[{name}] ✅ Cloudflare 验证已完美通过！")
+                        cf_passed = True
                         break
-                
-                # 额外检查：查找包含"剩余"、"剩余时间"、"expires"、"expiry"等关键词附近的文本
-                if not found_status:
-                    expiry_keywords = ['剩余', '剩余时间', 'expires', 'expiry', 'expire', '有效期', 'valid']
-                    for keyword in expiry_keywords:
-                        idx = page_html.find(keyword)
-                        if idx != -1:
-                            context = page_html[max(0, idx-50):idx+150]
-                            print(f"找到关键词 '{keyword}' 上下文: {context}")
-                            time_match = re.search(r'(\d{2}:\d{2}:\d{2}|\d+\s*天\s*\d+\s*时|\d+\s*小时|\d+\s*分钟)', context)
-                            if time_match:
-                                found_time = time_match.group(1)
-                                found_status = True
-                                break
-                
-                # 判断续期是否真正成功
-                success_keywords = ['续期成功', '已续期', 'success', 'renewed', 'renewal success', '奖励已发放']
-                success_found = False
-                for kw in success_keywords:
-                    if kw.lower() in page_html.lower():
-                        success_found = True
-                        print(f"找到成功关键词: {kw}")
-                        break
-                
-                # 最终判断逻辑
-                if found_status and found_time != "未知":
-                    status = "✅ 续期成功"
-                elif success_found:
-                    status = "✅ 续期成功"
-                else:
-                    status = "❌ 续期失败"
-                
-                print(f"最终结果: 状态={status}, 剩余时间={found_time}")
-
-                try:
-                    sb.save_screenshot(f"screenshots/{name}_2_result.png")
                 except:
-                    pass
+                    time.sleep(2)
 
-                task_results.append({"name": name, "status": status, "time": found_time})
-                break  # 成功则跳出重试循环
+            # 3. 破盾后点击最后的确认按钮
+            print(f"[{name}] 正在点击最终的 [VOTE - ADDS 90 MINUTES] 确认按钮...")
+            try:
+                sb.wait_for_element_visible("#vm-submit", timeout=10)
+                sb.click('#vm-submit')
+            except Exception as e:
+                print(f"[{name}] ⚠️ 无法通过 ID 找到最终按钮，尝试盲点击...")
+                sb.slow_click("body", force=True)
 
-        except Exception as e:
-            print(f"节点 [{name}] 第 {attempt+1} 次执行异常: {e}")
-            if attempt < max_retries - 1:
-                print(f"等待 10 秒后重试...")
-                time.sleep(10)
-            else:
-                print(f"节点 [{name}] 重试次数用尽，标记为失败")
-                task_results.append({"name": name, "status": "❌ 执行失败", "time": "未知"})
+            print(f"[{name}] 等待后台发放奖励时间...")
+            time.sleep(15) 
+            
+            # 因为我们用的是直接抓取 ID 时间，所以就算有广告遮挡也完全不影响数据的提取！
+            final_time = get_remaining_time(sb)
+            print(f"[{name}] 提取到最新时间: {final_time}")
+            
+            status = "✅ 续期成功" if final_time != "未知" else "⚠️ 状态未知"
+            sb.save_screenshot(f"screenshots/{name}_2_result.png")
+            
+            task_results.append({"name": name, "status": status, "time": final_time})
 
-print("\n所有节点处理完毕，正在统一发送综合汇报...")
+    except Exception as e:
+        print(f"[{name}] ❌ 节点执行异常: {e}")
+        task_results.append({"name": name, "status": "❌ 执行失败", "time": "未知"})
+
+print("\n所有节点处理完毕，正在发送汇报...")
 send_unified_tg(task_results)
