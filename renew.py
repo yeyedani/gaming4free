@@ -6,17 +6,9 @@ import urllib.request
 
 # ================= 修复 Windows 控制台 Emoji 编码报错 =================
 try:
-    # 强制将标准输出切换为 UTF-8，防止打印 🚀、🛡️ 等图标时崩溃
     sys.stdout.reconfigure(encoding='utf-8')
 except Exception:
     pass
-
-# ================= 智能环境配置 =================
-if "DISPLAY" not in os.environ:
-    os.environ["DISPLAY"] = ":1"
-if "XAUTHORITY" not in os.environ:
-    if os.path.exists("/home/headless/.Xauthority"):
-        os.environ["XAUTHORITY"] = "/home/headless/.Xauthority"
 
 from seleniumbase import SB
 
@@ -25,7 +17,6 @@ PROXY_URL = os.getenv("PROXY_URL", "").strip()
 TG_TOKEN = os.getenv("TG_TOKEN", "").strip()
 TG_CHAT_ID = os.getenv("TG_CHAT_ID", "").strip()
 
-# 替换为您需要续期的目标
 TARGETS = [
     {"num": "nidaye", "region": "nidaye"}
 ]
@@ -94,16 +85,23 @@ class Game4FreeRenewal:
                 self.log(f"📂 正在访问目标网址...")
                 sb.uc_open_with_reconnect(URL_APP_PANEL, reconnect_time=6)
 
-                # ================== 阶段 1：入口大盾检测 ==================
+                # ================== 阶段 1：入口大盾检测 (核心优化) ==================
                 self.log("🛡️ 等待主页面彻底加载完毕...")
                 try:
                     sb.wait_for_element('#sd-vote-btn', timeout=15)
                 except Exception:
-                    self.log("⚠️ 遇到入口大盾，启动底层真实鼠标模拟...")
+                    self.log("⚠️ 遇到入口大盾，启动底层 CDP 穿透点击...")
                     try:
-                        sb.uc_gui_click_captcha()
-                        time.sleep(3)
-                        sb.uc_gui_handle_captcha()
+                        # 彻底抛弃物理鼠标，改用神经直连的 uc_click
+                        if sb.is_element_visible("div.cf-turnstile iframe"):
+                            sb.uc_click("div.cf-turnstile iframe")
+                        time.sleep(6)
+                        
+                        # 绝招：如果 CF 傲娇卡住了，直接强制刷新，大概率秒过
+                        if not sb.is_element_visible('#sd-vote-btn'):
+                            self.log("🔄 尝试刷新页面重置盾牌状态...")
+                            sb.refresh_page()
+                            time.sleep(8)
                     except:
                         pass
                     
@@ -140,7 +138,7 @@ class Game4FreeRenewal:
                 except:
                     raise Exception("杀广告后弹窗仍未出现，请检查截图。")
 
-                # ================== 阶段 4：V30 温柔狙击版 (核心修改) ==================
+                # ================== 阶段 4：弹窗盾潜行版 ==================
                 self.log("🛡️ 弹窗验证码已就位，开始静默等待算力验证 (10秒)...")
                 time.sleep(10)
                 
@@ -151,9 +149,11 @@ class Game4FreeRenewal:
                     self.log("✅ Cloudflare 自然验证通过，毫无察觉！")
                     cf_passed = True
                 else:
-                    self.log("⚠️ 未自然解锁，准备执行唯一一次拟真点击...")
+                    self.log("⚠️ 未自然解锁，准备执行底层穿透点击...")
                     try:
-                        sb.uc_click("div.cf-turnstile iframe")
+                        # 再次使用神经直连点击弹窗内的盾
+                        if sb.is_element_visible("div.cf-turnstile iframe"):
+                            sb.uc_click("div.cf-turnstile iframe")
                     except:
                         pass
                     
@@ -230,7 +230,7 @@ class Game4FreeRenewal:
 
     def run(self):
         for target in TARGETS:
-            max_retries = 2
+            max_retries = 1
             for attempt in range(max_retries):
                 prev_len = len(self.task_results)
                 self.run_single_server(target["num"], target["region"])
