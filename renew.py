@@ -83,39 +83,66 @@ class Game4FreeRenewal:
             try:
                 self.log(f"📂 正在访问目标网址...")
                 sb.uc_open_with_reconnect(URL_APP_PANEL, reconnect_time=5)
-                time.sleep(8)
 
-                # ================== 获取初始时间 ==================
+                # ================== 核心修正 1：死等主页面 CF 盾 ==================
+                self.log("🛡️ 等待主页面彻底加载完毕...")
+                try:
+                    # 强制等待核心投票按钮出现。如果被 CF 卡住，uc 会自动处理，我们只需耐心等
+                    sb.wait_for_element('#sd-vote-btn', timeout=30)
+                except Exception:
+                    self.log("⚠️ 遇到顽固大盾，尝试点击验证码中心...")
+                    try:
+                        if sb.is_element_visible('input[type="checkbox"]'):
+                            sb.click('input[type="checkbox"]')
+                        elif sb.is_element_visible('div.cf-turnstile iframe'):
+                            sb.click('div.cf-turnstile iframe')
+                        sb.wait_for_element('#sd-vote-btn', timeout=20)
+                    except:
+                        raise Exception("主页面被 Cloudflare 彻底拦截，未能加载。")
+
+                # ================== 获取初始时间与状态 ==================
+                btn_text = sb.get_text('#sd-vote-btn').upper()
+                if 'WAIT' in btn_text:
+                    self.log("🛑 节点处于冷却期，跳过执行。")
+                    self.task_results.append({"name": region, "status": "⏳ 冷却中", "time": "不适用"})
+                    return
+                elif 'VOTED' in btn_text:
+                    self.log("✅ 节点显示已投票，跳过执行。")
+                    self.task_results.append({"name": region, "status": "✅ 已投票", "time": "不适用"})
+                    return
+
                 initial_time_str = "00:00:00"
                 if sb.is_element_visible('#sd-timer'):
                     initial_time_str = sb.get_text('#sd-timer').strip()
                 initial_sec = time_to_seconds(initial_time_str)
                 self.log(f"🕒 初始真实时间: {initial_time_str} ({initial_sec} 秒)")
 
-                # ================== 点击主按钮 ==================
-                self.log("🖱️ 唤醒投票弹窗...")
+                # ================== 核心修正 2：击杀广告进程 ==================
+                self.log("🖱️ 破坏广告环境，强开投票弹窗...")
+                # 将全局广告队列设为 null，让网页误以为广告失败，从而直接弹窗！
+                sb.execute_script("window.ramp = null;")
                 sb.execute_script("var b = document.getElementById('sd-vote-btn'); if(b) b.click();")
                 
                 try:
-                    sb.wait_for_element_visible('#vm-submit', timeout=45)
+                    # 去掉了广告，弹窗会瞬间出现，等 15 秒足矣
+                    sb.wait_for_element_visible('#vm-submit', timeout=15)
                 except:
-                    raise Exception("未找到投票弹窗，可能被广告完全拦截。")
+                    raise Exception("杀广告后弹窗仍未出现，网页结构可能发生重大变更。")
 
-                # ================== 【核心修复】真实破盾逻辑 ==================
-                self.log("🛡️ 开始迎战 Cloudflare 盾牌...")
+                # ================== 等待弹窗内的 CF 验证 ==================
+                self.log("🛡️ 开始迎战弹窗 Cloudflare 验证...")
                 cf_passed = False
                 
-                # 轮询长达 40 秒，绝不强行撬锁，死等 Token 下发
-                for i in range(40):
-                    # 检查自然解锁：网页 JS 拿到 Token 后，会自动移除 disabled 属性
+                for i in range(35):
+                    # 自然解锁检测
                     is_unlocked = sb.execute_script("return document.getElementById('vm-submit').disabled === false;")
                     if is_unlocked:
-                        self.log("✅ Cloudflare 验证真实通过，拿到安全 Token！")
+                        self.log("✅ Cloudflare 验证通过，拿到安全 Token！")
                         cf_passed = True
                         break
                     
-                    # 每隔 6 秒，尝试物理点击一次验证框区域，刺激盾牌弹绿勾
-                    if i > 0 and i % 6 == 0:
+                    # 辅助点击检测
+                    if i > 0 and i % 5 == 0:
                         try:
                             if sb.is_element_visible("div.cf-turnstile iframe"):
                                 self.log("⚠️ 尝试辅助点击 CF 验证框...")
@@ -125,13 +152,13 @@ class Game4FreeRenewal:
                     time.sleep(1)
 
                 if not cf_passed:
-                    raise Exception("Cloudflare 验证始终未能解开，强行提交必败，放弃当前操作。")
+                    raise Exception("弹窗内 Cloudflare 验证未能解开，缺少 Token 无法提交。")
 
-                # ================== 最终提交与接口抓取 ==================
+                # ================== 最终提交与验证 ==================
                 self.log("🖱️ 执行合法提交...")
                 sb.click('#vm-submit')
                 
-                self.log("⏳ 等待后端接口真实反馈...")
+                self.log("⏳ 等待接口反馈...")
                 server_msg = ""
                 for _ in range(15):
                     if sb.is_element_visible('#vm-msg'):
@@ -142,27 +169,34 @@ class Game4FreeRenewal:
                             break
                     time.sleep(1)
 
-                self.log("⏳ 等待 15 秒页面数据同步...")
+                self.log("⏳ 页面数据同步中...")
                 time.sleep(15)
                 sb.refresh_page()
                 time.sleep(10)
 
-                # ================== 【核心修复】数学级时间校验 ==================
+                # ================== 数学交叉验证 ==================
                 timestamp_after = "00:00:00"
                 if sb.is_element_visible('#sd-timer'):
                     timestamp_after = sb.get_text('#sd-timer').strip()
                 new_sec = time_to_seconds(timestamp_after)
-                
                 time_diff = new_sec - initial_sec
-                self.log(f"🕒 更新后时间: {timestamp_after} (秒数差值: {time_diff} 秒)")
 
-                # 判断逻辑：只要时间比原来多出了 3000 秒以上（正常是加 5400 秒），才是真成功
-                if time_diff > 3000:
+                recent_vote = ""
+                if sb.is_element_visible('.sp-vote-row .sp-vote-time'):
+                    recent_vote = sb.get_text('.sp-vote-row .sp-vote-time').strip().lower()
+
+                self.log(f"🕒 更新后时间: {timestamp_after} (秒数差值: {time_diff} 秒)")
+                self.log(f"📝 最新流水账: {recent_vote}")
+
+                is_time_increased = time_diff > 3000
+                is_just_voted = any(x in recent_vote for x in ['sec', 'just', '0m', '1m', '2m', '3m'])
+
+                if is_time_increased or is_just_voted:
                     status = "✅ 成功续期"
-                    self.log("🎉 验证无误，时间确实增加了！")
+                    self.log("🎉 验证无误，续期成功！")
                 else:
-                    status = "❌ 失败 (时间未涨)"
-                    self.log(f"💔 失败原因：时间仅变动 {time_diff} 秒，接口极可能拦截了请求。")
+                    status = "❌ 失败 (流水未变)"
+                    self.log(f"💔 失败原因：时间与流水账均未刷新。")
                 
                 try:
                     sb.save_screenshot(f"{self.screenshot_dir}/{region}_final_result.png")
