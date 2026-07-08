@@ -24,7 +24,6 @@ TARGETS = [
 ]
 
 def time_to_seconds(t_str):
-    """将倒计时转换为纯秒数，用于绝对精准的数学计算"""
     try:
         parts = t_str.strip().split(':')
         if len(parts) == 3:
@@ -82,23 +81,29 @@ class Game4FreeRenewal:
         ) as sb:
             try:
                 self.log(f"📂 正在访问目标网址...")
-                sb.uc_open_with_reconnect(URL_APP_PANEL, reconnect_time=5)
+                # 延长重连时间，给浏览器加载 CF 判定留出空间
+                sb.uc_open_with_reconnect(URL_APP_PANEL, reconnect_time=6)
 
-                # ================== 核心修正 1：死等主页面 CF 盾 ==================
+                # ================== 核心修正 1：用“真手指”点开城门盾 ==================
                 self.log("🛡️ 等待主页面彻底加载完毕...")
                 try:
-                    # 强制等待核心投票按钮出现。如果被 CF 卡住，uc 会自动处理，我们只需耐心等
-                    sb.wait_for_element('#sd-vote-btn', timeout=30)
+                    # 等待 15 秒，看主按钮出不出来
+                    sb.wait_for_element('#sd-vote-btn', timeout=15)
                 except Exception:
-                    self.log("⚠️ 遇到顽固大盾，尝试点击验证码中心...")
+                    self.log("⚠️ 遇到入口大盾，启动浏览器底层真实鼠标模拟点击...")
                     try:
-                        if sb.is_element_visible('input[type="checkbox"]'):
-                            sb.click('input[type="checkbox"]')
-                        elif sb.is_element_visible('div.cf-turnstile iframe'):
-                            sb.click('div.cf-turnstile iframe')
+                        # 调用 SB 最强的 CF 破盾专属 API (模拟物理鼠标移动并点击中心)
+                        sb.uc_gui_click_captcha()
+                        time.sleep(3)
+                        sb.uc_gui_handle_captcha()
+                    except:
+                        pass
+                    
+                    try:
+                        # 再等 20 秒
                         sb.wait_for_element('#sd-vote-btn', timeout=20)
                     except:
-                        raise Exception("主页面被 Cloudflare 彻底拦截，未能加载。")
+                        raise Exception("主页面被 Cloudflare 彻底拦截，破盾失败。")
 
                 # ================== 获取初始时间与状态 ==================
                 btn_text = sb.get_text('#sd-vote-btn').upper()
@@ -117,42 +122,39 @@ class Game4FreeRenewal:
                 initial_sec = time_to_seconds(initial_time_str)
                 self.log(f"🕒 初始真实时间: {initial_time_str} ({initial_sec} 秒)")
 
-                # ================== 核心修正 2：击杀广告进程 ==================
+                # ================== 击杀广告进程并呼出弹窗 ==================
                 self.log("🖱️ 破坏广告环境，强开投票弹窗...")
-                # 将全局广告队列设为 null，让网页误以为广告失败，从而直接弹窗！
                 sb.execute_script("window.ramp = null;")
                 sb.execute_script("var b = document.getElementById('sd-vote-btn'); if(b) b.click();")
                 
                 try:
-                    # 去掉了广告，弹窗会瞬间出现，等 15 秒足矣
                     sb.wait_for_element_visible('#vm-submit', timeout=15)
                 except:
-                    raise Exception("杀广告后弹窗仍未出现，网页结构可能发生重大变更。")
+                    raise Exception("杀广告后弹窗仍未出现，请检查截图。")
 
-                # ================== 等待弹窗内的 CF 验证 ==================
+                # ================== 核心修正 2：用“真手指”点开弹窗盾 ==================
                 self.log("🛡️ 开始迎战弹窗 Cloudflare 验证...")
                 cf_passed = False
                 
                 for i in range(35):
-                    # 自然解锁检测
                     is_unlocked = sb.execute_script("return document.getElementById('vm-submit').disabled === false;")
                     if is_unlocked:
                         self.log("✅ Cloudflare 验证通过，拿到安全 Token！")
                         cf_passed = True
                         break
                     
-                    # 辅助点击检测
-                    if i > 0 and i % 5 == 0:
+                    # 使用底层的 uc_click 代替普通 click，防止被识别为机器人
+                    if i > 0 and i % 6 == 0:
                         try:
                             if sb.is_element_visible("div.cf-turnstile iframe"):
-                                self.log("⚠️ 尝试辅助点击 CF 验证框...")
-                                sb.click_if_visible("div.cf-turnstile iframe")
+                                self.log("⚠️ 尝试底层穿透点击 CF 验证框...")
+                                sb.uc_click("div.cf-turnstile iframe")
                         except:
                             pass
                     time.sleep(1)
 
                 if not cf_passed:
-                    raise Exception("弹窗内 Cloudflare 验证未能解开，缺少 Token 无法提交。")
+                    raise Exception("弹窗内 Cloudflare 验证未能解开，无法提交。")
 
                 # ================== 最终提交与验证 ==================
                 self.log("🖱️ 执行合法提交...")
@@ -215,7 +217,7 @@ class Game4FreeRenewal:
 
     def run(self):
         for target in TARGETS:
-            max_retries = 3
+            max_retries = 1
             for attempt in range(max_retries):
                 prev_len = len(self.task_results)
                 self.run_single_server(target["num"], target["region"])
