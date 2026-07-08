@@ -14,7 +14,6 @@ if "XAUTHORITY" not in os.environ:
 from seleniumbase import SB
 
 # ================= 核心参数配置 =================
-# 【核心修改】：通过 os.getenv 动态读取您在 Secrets 中配置的 PROXY_URL
 PROXY_URL = os.getenv("PROXY_URL", "").strip()
 TG_TOKEN = os.getenv("TG_TOKEN", "").strip()
 TG_CHAT_ID = os.getenv("TG_CHAT_ID", "").strip()
@@ -73,7 +72,6 @@ class Game4FreeRenewal:
         self.log(f"🚀 开始处理节点 [{region}]")
         self.log("=" * 40)
 
-        # 校验代理是否存在，若不存在则为 None (不使用代理)
         proxy_arg = PROXY_URL if PROXY_URL else None
         if proxy_arg:
             self.log("🌍 检测到有效代理配置，正在挂载代理节点...")
@@ -82,7 +80,6 @@ class Game4FreeRenewal:
             uc=True,
             uc_cdp=True,
             headless=False,
-            # 【核心修改】：去除了 --disable-gpu，还原真实电脑特征
             chromium_arg="--no-sandbox,--disable-dev-shm-usage,--window-position=0,0,--start-maximized",
             proxy=proxy_arg
         ) as sb:
@@ -90,7 +87,7 @@ class Game4FreeRenewal:
                 self.log(f"📂 正在访问目标网址...")
                 sb.uc_open_with_reconnect(URL_APP_PANEL, reconnect_time=6)
 
-                # ================== 阶段 1：死等主页面 CF 盾 ==================
+                # ================== 阶段 1：入口大盾检测 ==================
                 self.log("🛡️ 等待主页面彻底加载完毕...")
                 try:
                     sb.wait_for_element('#sd-vote-btn', timeout=15)
@@ -135,22 +132,30 @@ class Game4FreeRenewal:
                 except:
                     raise Exception("杀广告后弹窗仍未出现，请检查截图。")
 
-                # ================== 阶段 4：用“真手指”点开弹窗盾 ==================
+                # ================== 阶段 4：闭眼强袭弹窗盾 (核心修改) ==================
                 self.log("🛡️ 开始迎战弹窗 Cloudflare 验证...")
                 cf_passed = False
                 
-                for i in range(35):
-                    is_unlocked = sb.execute_script("return document.getElementById('vm-submit').disabled === false;")
+                for i in range(40):
+                    # 1. 检测是否自然解锁
+                    is_unlocked = sb.execute_script("var btn=document.getElementById('vm-submit'); return btn && btn.disabled === false;")
                     if is_unlocked:
                         self.log("✅ Cloudflare 验证通过，拿到安全 Token！")
                         cf_passed = True
                         break
                     
-                    if i > 0 and i % 6 == 0:
+                    # 2. 定期施加物理刺激 (彻底抛弃可见性检测，直接盲打)
+                    if i > 0 and i % 5 == 0:
+                        self.log("⚠️ 对弹窗盾施加底层物理刺激...")
                         try:
-                            if sb.is_element_visible("div.cf-turnstile iframe"):
-                                self.log("⚠️ 尝试底层穿透点击 CF 验证框...")
-                                sb.uc_click("div.cf-turnstile iframe")
+                            # 绝招 A：SeleniumBase 原生图形界面破解
+                            sb.uc_gui_click_captcha()
+                        except:
+                            pass
+                            
+                        try:
+                            # 绝招 B：强制穿透点击容器
+                            sb.uc_click('#ts-widget', timeout=1)
                         except:
                             pass
                     time.sleep(1)
@@ -219,7 +224,7 @@ class Game4FreeRenewal:
 
     def run(self):
         for target in TARGETS:
-            max_retries = 3
+            max_retries = 2
             for attempt in range(max_retries):
                 prev_len = len(self.task_results)
                 self.run_single_server(target["num"], target["region"])
