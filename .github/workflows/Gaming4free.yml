@@ -24,6 +24,9 @@ jobs:
 
     - name: Install dependencies
       run: |
+        # 补上了 xvfb 的系统级安装，防止最后一步报错命令未找到
+        sudo apt-get update
+        sudo apt-get install -y xvfb
         python -m pip install --upgrade pip
         pip install seleniumbase requests
         
@@ -40,8 +43,17 @@ jobs:
         unzip -q Xray-linux-64.zip -d xray
         chmod +x xray/xray
         
-        # 使用 printenv 完美写入配置，避免任何符号转义问题
+        # 使用 printenv 写入配置
         printenv XRAY_CONFIG > xray/config.json
+        
+        # ================= 🕵️‍♂️ 核心调试探针开始 =================
+        echo "===== 正在诊断 config.json ====="
+        echo "1. 文件大小检查："
+        ls -lh xray/config.json
+        echo "2. 文件内部数据全貌："
+        cat xray/config.json
+        echo "================================="
+        # ================= 🕵️‍♂️ 核心调试探针结束 =================
         
         # 后台启动 Xray
         nohup ./xray/xray run -c xray/config.json > xray.log 2>&1 &
