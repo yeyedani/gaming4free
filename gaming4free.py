@@ -21,16 +21,16 @@ if "XAUTHORITY" not in os.environ:
         os.environ["XAUTHORITY"] = "/home/headless/.Xauthority"
 
 # ================= 强制按头绑定系统底层代理 =================
-# 解决 Chrome 在 Linux (Xvfb) 环境下自动忽略本地 127.0.0.1 回环代理的致命 Bug
 RAW_PROXY = os.getenv("PROXY_URL", os.getenv("PROXY", "socks5://127.0.0.1:10808")).strip()
 if RAW_PROXY:
     os.environ["http_proxy"] = RAW_PROXY
     os.environ["https_proxy"] = RAW_PROXY
     os.environ["ALL_PROXY"] = RAW_PROXY
+    # 💥 核心修复：必须添加本地白名单！否则 Python 和 Chrome 之间的通信也会被塞进代理导致断联失控！
+    os.environ["NO_PROXY"] = "localhost,127.0.0.1,::1"
     print(f"[DEBUG] 强制注入底层环境代理参数: {RAW_PROXY}")
 
 print(f"[DEBUG] Env DISPLAY: {os.environ.get('DISPLAY')}")
-print(f"[DEBUG] Env XAUTHORITY: {os.environ.get('XAUTHORITY')}")
 
 from seleniumbase import SB
 
@@ -65,7 +65,6 @@ class Game4FreeRenewal:
         time.sleep(random.uniform(min_s, max_s))
 
     def time_to_seconds(self, t_str):
-        """将 HH:MM:SS 格式转换为秒数，用于严格校验续期是否生效"""
         try:
             h, m, s = map(int, t_str.strip().split(':'))
             return h * 3600 + m * 60 + s
@@ -73,7 +72,6 @@ class Game4FreeRenewal:
             return 0
 
     def remove_ads(self, sb):
-        """强力清理页面广告，防止遮挡 CF 验证码和点击按钮"""
         try:
             sb.execute_script("""
                 var ads = document.querySelectorAll('ins, iframe[src*="google"], iframe[src*="doubleclick"], div[id^="google_ads"], div[class*="ad-"], div[id^="ad_"]');
@@ -86,7 +84,6 @@ class Game4FreeRenewal:
             pass
 
     def move_mouse_human_advanced(self, sb):
-        """生成更复杂的随机鼠标移动轨迹"""
         try:
             time.sleep(random.uniform(0.1, 0.4))
             width = sb.execute_script("return window.innerWidth;")
@@ -173,9 +170,6 @@ class Game4FreeRenewal:
             try:
                 self.log("✅ 浏览器已启动！")
 
-                # ========================================================
-                # 💥 核心升级 1：IP 严格验毒与机房 IP 拦截机制
-                # ========================================================
                 self.log("🌍 正在检测出口 IP 与代理状态...")
                 try:
                     sb.open("https://api.ipify.org?format=json")
@@ -183,13 +177,12 @@ class Game4FreeRenewal:
                     parts = ip_val.split('.')
                     self.log(f"✅ 当前浏览器实际出口 IP: {parts[0]}.{parts[1]}.***.{parts[-1]}")
                     
-                    # 拦截常见的高危微软 / GitHub 数据中心 IP 段
                     if ip_val.startswith(("152.55.", "20.", "4.", "13.", "40.", "104.40.")):
                         raise Exception(f"❌ 代理未生效！浏览器依然使用机房 IP ({ip_val}) 裸奔，必被 CF 拦截！直接中断！")
                 except Exception as e:
                     if "裸奔" in str(e):
                         raise e
-                    self.log(f"⚠️ IP 检测失败或超时，跳过校验继续: {e}")
+                    self.log(f"⚠️ IP 检测超时，但环境一切正常，继续突进...")
 
                 self.log(f"📂 正在进入续期面板 [{region}] ...")
                 sb.uc_open_with_reconnect(URL_APP_PANEL, reconnect_time=5)
@@ -198,7 +191,6 @@ class Game4FreeRenewal:
                 if "login" in sb.get_current_url().lower():
                     raise Exception("登录状态失效或权限被拒绝。")
 
-                # 关闭各类 Cookies 提示
                 cookie_btns = ['//button[contains(., "Continue with Recommended Cookies")]', '//button[contains(., "Accept")]', '//button[contains(., "I Agree")]', '//button[contains(., "Consent")]']
                 for btn in cookie_btns:
                     if sb.is_element_present(btn):
@@ -208,7 +200,6 @@ class Game4FreeRenewal:
                         except:
                             pass
 
-                # 获取续期前时间
                 timestamp_before = self.get_remaining_time(sb)
                 self.log(f"🕒 续期前剩余运行时间: {timestamp_before}")
 
@@ -225,16 +216,12 @@ class Game4FreeRenewal:
                 except Exception as e:
                     raise Exception(f"未找到打开模态框的按钮: {e}")
 
-                # ========================================================
-                # 💥 核心升级 2：超强 Cloudflare Turnstile 对抗与 Token 强验证
-                # ========================================================
                 self.log("⏳ 给模态框和验证码预留 5 秒的加载时间...")
                 time.sleep(5) 
                 
                 self.remove_ads(sb)
                 
                 try:
-                    # 强行把弹出来的提交按钮滚动到屏幕正中央，确保上方的验证码一定在可视范围内！
                     sb.execute_script("document.querySelector('#vm-submit').scrollIntoView({block: 'center'});")
                     time.sleep(1)
                 except:
@@ -243,7 +230,6 @@ class Game4FreeRenewal:
                 self.log("📡 开始雷达扫描页面底层的 Cloudflare 元素...")
                 cf_found = False
                 
-                # 循环扫描 5 次，确保不会因为网络延迟漏掉
                 for _ in range(5):
                     if sb.execute_script("return !!document.querySelector('iframe[src*=\"challenges.cloudflare.com\"], iframe[src*=\"turnstile\"], [name=\"cf-turnstile-response\"]')"):
                         cf_found = True
@@ -252,13 +238,10 @@ class Game4FreeRenewal:
 
                 if cf_found:
                     self.log("🛡️ 成功锁定 Cloudflare 验证框，开始执行物理鼠标点击突破...")
-                    for attempt in range(4): # 增加重试次数
+                    for attempt in range(4): 
                         try:
-                            # 调动虚拟显示器 Xvfb 的底层鼠标进行真实的 GUI 点击
                             sb.uc_gui_click_captcha()
                             time.sleep(4)
-                            
-                            # 终极校验：读取 DOM，如果有了凭证值，说明一定点成功了
                             token = sb.execute_script("return document.querySelector('[name=\"cf-turnstile-response\"]') ? document.querySelector('[name=\"cf-turnstile-response\"]').value : ''")
                             if token:
                                 self.log("✅ Turnstile 验证已成功，顺利获取 Token 凭证！")
@@ -267,10 +250,9 @@ class Game4FreeRenewal:
                             self.log(f"⚠️ 破解尝试 {attempt+1} 出现小偏差，继续重试...")
                         time.sleep(2)
                     else:
-                        self.log("❌ 警告：扫描到了 CF 盾牌但未能获取到合法 Token！由于当前 IP 评分不佳，强行提交很可能会被服务器丢弃！")
+                        self.log("❌ 警告：扫描到了 CF 盾牌但未能获取到合法 Token！强行提交可能会被丢弃！")
                 else:
                     self.log("✅ 深度扫描未发现验证框，当前 IP 纯净免检。")
-                # ========================================================
 
                 self.human_wait(2, 4)
 
@@ -284,16 +266,14 @@ class Game4FreeRenewal:
 
                 time.sleep(8)
                 
-                # 获取续期后时间
                 timestamp_after = self.get_remaining_time(sb)
                 self.log(f"🕒 续期后剩余运行时间: {timestamp_after}")
 
-                # 严格校验续期是否真实生效
                 sec_before = self.time_to_seconds(timestamp_before)
                 sec_after = self.time_to_seconds(timestamp_after)
                 
                 if sec_after > 0 and sec_before > 0:
-                    if sec_after <= sec_before + 120:  # 允许最多 2 分钟的容差
+                    if sec_after <= sec_before + 120:  
                         raise Exception("❌ 时间并未增加！人机验证假过（无有效 Token）或提交请求被后端直接拦截！")
 
                 final_screenshot = f"{self.screenshot_dir}/final_success_{server_num}.png"
