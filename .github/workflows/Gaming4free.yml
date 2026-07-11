@@ -46,14 +46,13 @@ jobs:
         # 使用 printenv 写入配置
         printenv XRAY_CONFIG > xray/config.json
         
-        # ================= 🕵️‍♂️ 核心调试探针开始 =================
+        # ================= 🕵️‍♂️ 核心调试探针 =================
         echo "===== 正在诊断 config.json ====="
         echo "1. 文件大小检查："
         ls -lh xray/config.json
         echo "2. 文件内部数据全貌："
         cat xray/config.json
         echo "================================="
-        # ================= 🕵️‍♂️ 核心调试探针结束 =================
         
         # 后台启动 Xray
         nohup ./xray/xray run -c xray/config.json > xray.log 2>&1 &
@@ -71,11 +70,13 @@ jobs:
 
     - name: Run Script
       env:
-        # 这里的端口必须对应 JSON 里的 "port": 10808
+        # 💥 核心修改：注入双重本地代理锁，完美契合 V34 脚本的强悍防裸奔机制
         PROXY: socks5://127.0.0.1:10808
+        PROXY_URL: socks5://127.0.0.1:10808
         TG_TOKEN: ${{ secrets.TG_TOKEN }}      
         TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}  
         SERVERS: ${{ secrets.SERVERS }}  
       run: |
         # 使用 xvfb 运行以支持强力过人机验证模式
+        # ⚠️ 小主请注意：请确保您仓库里的代码文件名确实叫 gaming4free.py，如果是 renew.py 请将其修改一致。
         xvfb-run -a python gaming4free.py
