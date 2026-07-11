@@ -3,9 +3,8 @@ name: Gaming4free Auto Renew
 on:
   schedule:
     - cron: '0 */2 * * *'  # 每 2 小时自动运行一次
-  workflow_dispatch:       
+  workflow_dispatch:       # 保持手动触发，方便随时测试
 
-# ⚠️ 必须添加权限配置，允许 Action 修改仓库文件
 permissions:
   contents: write
 
@@ -24,9 +23,6 @@ jobs:
 
     - name: Install dependencies
       run: |
-        # 补上了 xvfb 的系统级安装，防止最后一步报错命令未找到
-        sudo apt-get update
-        sudo apt-get install -y xvfb
         python -m pip install --upgrade pip
         pip install seleniumbase requests
         
@@ -43,16 +39,8 @@ jobs:
         unzip -q Xray-linux-64.zip -d xray
         chmod +x xray/xray
         
-        # 使用 printenv 写入配置
+        # 使用 printenv 完美写入配置，避免任何字符转义和空格导致的崩溃
         printenv XRAY_CONFIG > xray/config.json
-        
-        # ================= 🕵️‍♂️ 核心调试探针 =================
-        echo "===== 正在诊断 config.json ====="
-        echo "1. 文件大小检查："
-        ls -lh xray/config.json
-        echo "2. 文件内部数据全貌："
-        cat xray/config.json
-        echo "================================="
         
         # 后台启动 Xray
         nohup ./xray/xray run -c xray/config.json > xray.log 2>&1 &
@@ -70,13 +58,10 @@ jobs:
 
     - name: Run Script
       env:
-        # 💥 核心修改：注入双重本地代理锁，完美契合 V34 脚本的强悍防裸奔机制
         PROXY: socks5://127.0.0.1:10808
-        PROXY_URL: socks5://127.0.0.1:10808
         TG_TOKEN: ${{ secrets.TG_TOKEN }}      
         TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}  
         SERVERS: ${{ secrets.SERVERS }}  
       run: |
         # 使用 xvfb 运行以支持强力过人机验证模式
-        # ⚠️ 小主请注意：请确保您仓库里的代码文件名确实叫 gaming4free.py，如果是 renew.py 请将其修改一致。
         xvfb-run -a python gaming4free.py
