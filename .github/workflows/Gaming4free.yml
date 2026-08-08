@@ -1,11 +1,13 @@
 name: Gaming4free Auto Renew
 
 on:
-  workflow_dispatch: # 由外部定时（如 cron-job.org）进行每小时触发
+  repository_dispatch:
+    types: [run-renew]  # 接收名为 run-renew 的外部信号
+  workflow_dispatch:    # 依然保留手动触发按钮
 
 permissions:
   contents: write
-
+  actions: write        # 新增：允许操作 Actions 运行记录的权限
 
 jobs:
   run_renewal:
@@ -28,7 +30,6 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        # 增加 --no-cache-dir 强制拉取最新包，彻底解决 Chrome 130+ 协议断连 Bug
         pip install --upgrade --no-cache-dir seleniumbase undetected-chromedriver requests pyautogui
 
     - name: Setup Chrome
@@ -63,5 +64,28 @@ jobs:
         TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}  
         SERVERS: ${{ secrets.SERVERS }}  
       run: |
-        # 增加 xvfb 视窗分辨率以确保验证码位于视野内
         xvfb-run --server-args="-screen 0 1280x720x24" -a python gaming4free.py
+
+    - name: 🧽 清理进程和临时文件
+      if: always()
+      run: |
+        pkill -f xray || true
+        pkill -f chromedriver || true
+        pkill -f chrome || true
+        pkill -f Xvfb || true
+        rm -rf xray xray.log xray-linux-64.zip || true
+
+    - name: 🧹 清理旧的工作流运行记录
+      if: always()
+      env:
+        GH_TOKEN: ${{ secrets.PRIVATE_REPO_TOKEN }}
+      run: |
+        runs=$(gh run list --workflow="${{ github.workflow }}" --limit=100 --json databaseId --jq '.[].databaseId')
+        count=0
+        for run_id in $runs; do
+          count=$((count + 1))
+          if [ $count -gt 1 ]; then
+            echo "删除运行记录: $run_id"
+            gh run delete $run_id || true
+          fi
+        done
