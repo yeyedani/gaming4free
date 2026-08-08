@@ -74,11 +74,11 @@ jobs:
         pkill -f chrome || true
         pkill -f Xvfb || true
         rm -rf xray xray.log xray-linux-64.zip || true
-
+        
     - name: 🧹 清理旧的工作流运行记录
       if: always()
       env:
-        GH_TOKEN: ${{ secrets.PRIVATE_REPO_TOKEN }}
+        GH_TOKEN: ${{ github.token }}
       run: |
         runs=$(gh run list --workflow="${{ github.workflow }}" --limit=100 --json databaseId --jq '.[].databaseId')
         count=0
